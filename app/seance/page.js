@@ -14,7 +14,7 @@ const AXIS_SKILL_KEYS = AXIS_KEYS.filter((k) => k !== 'hygiene');
 
 export default function Seance() {
   const router = useRouter();
-  const { t } = useT();
+  const { t, lang } = useT();
   const [ready, setReady] = useState(false);
   const [teams, setTeams] = useState([]);
   const [teamId, setTeamId] = useState('');
@@ -132,11 +132,30 @@ export default function Seance() {
 
   if (!ready) return <div className="wrap"><p style={{ color: 'var(--muted)' }}>{t('common.loading')}</p></div>;
 
+  /* Date du jour dans la langue active : « jeudi 10 septembre » / « Thursday 10 September ». */
+  const todayLabel = new Date().toLocaleDateString(lang === 'en' ? 'en-GB' : 'fr-FR',
+    { weekday: 'long', day: 'numeric', month: 'long' });
+
+  /* Étiquette de carte numérotée, pour matérialiser l'ordre de saisie. */
+  const step = (n, text, extra) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+      <span className="q" style={{ width: 21, height: 21, flex: '0 0 21px', borderRadius: 8, background: 'var(--peach)',
+        color: 'var(--brand-dark)', fontSize: 11, fontWeight: 800,
+        display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{n}</span>
+      <span className="label">{text}{extra}</span>
+    </div>
+  );
+
   return (
     <div className="wrap">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-        <a href="#" onClick={(e) => { e.preventDefault(); router.push('/'); }} style={{ fontWeight: 700 }}>←</a>
-        <div className="q" style={{ fontWeight: 700, fontSize: 18 }}>{t('sea.title')}</div>
+      {/* ===== En-tête ===== */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 16 }}>
+        <a href="#" onClick={(e) => { e.preventDefault(); router.push('/'); }}
+          style={{ fontWeight: 700, fontSize: 16, lineHeight: '24px' }}>←</a>
+        <div style={{ minWidth: 0 }}>
+          <div className="q" style={{ fontWeight: 700, fontSize: 18, lineHeight: '24px' }}>{t('sea.title')}</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginTop: 2 }}>{todayLabel}</div>
+        </div>
       </div>
 
       {teams.length === 0 && (
@@ -150,17 +169,55 @@ export default function Seance() {
           {err && <div className="error">{err}</div>}
           {ok && <div className="pill" style={{ marginBottom: 12 }}>{ok}</div>}
 
+          {/* ===== 1. Équipe + thème ===== */}
           <div className="card">
-            <div className="label" style={{ marginBottom: 6 }}>{t('evt.team')}</div>
+            {step(1, t('evt.team'))}
             <select className="input" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
               {teams.map((tm) => <option key={tm.id} value={tm.id}>{tm.name}</option>)}
             </select>
             <div className="label" style={{ marginBottom: 6 }}>{t('sea.theme')}</div>
-            <input className="input" value={theme} onChange={(e) => setTheme(e.target.value)} placeholder={t('sea.themePh')} />
+            <input className="input" style={{ marginBottom: 0 }} value={theme} onChange={(e) => setTheme(e.target.value)} placeholder={t('sea.themePh')} />
           </div>
 
+          {/* ===== 2. Présences ===== */}
           <div className="card">
-            <div className="label" style={{ marginBottom: 4 }}>{t('home.program')}</div>
+            {step(2, t('sea.presence'))}
+            {teamPlayers.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('sea.noMembers')}</div>}
+            {teamPlayers.map((p, idx) => {
+              const st = presence[p.id] || 'present';
+              const opts = [
+                { k: 'present', lbl: t('sea.pPresent'), c: '#1E7B34', bg: '#E6F4EA' },
+                { k: 'late', lbl: t('sea.pLate'), c: '#8A6D1B', bg: '#FBF1D6' },
+                { k: 'absent', lbl: t('sea.pAbsent'), c: '#C0392B', bg: '#FDECEA' },
+              ];
+              return (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '9px 0', borderTop: idx === 0 ? 'none' : '1px solid var(--border)' }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {p.first_name} {p.last_name || ''}
+                  </span>
+                  <div style={{ display: 'flex', gap: 4, flex: '0 0 auto' }}>
+                    {opts.map((o) => {
+                      const on = st === o.k;
+                      return (
+                        <button key={o.k} type="button" onClick={() => setPresence((m) => ({ ...m, [p.id]: o.k }))}
+                          style={{ border: 'none', borderRadius: 14, padding: '7px 10px', fontSize: 11, fontWeight: 700,
+                            cursor: 'pointer', fontFamily: 'inherit',
+                            background: on ? o.c : o.bg, color: on ? '#fff' : o.c, opacity: on ? 1 : 0.75 }}>
+                          {o.lbl}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ===== 3. Au programme (axes) ===== */}
+          <div className="card">
+            {step(3, t('home.program'))}
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>{t('sea.programHint')}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 12 }}>
               {AXIS_KEYS.map((k) => {
@@ -187,46 +244,9 @@ export default function Seance() {
             ))}
           </div>
 
+          {/* ===== 4. Compétences validées ===== */}
           <div className="card">
-            <div className="label" style={{ marginBottom: 8 }}>{t('sea.presence')}</div>
-            {teamPlayers.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('sea.noMembers')}</div>}
-            {teamPlayers.map((p) => {
-              const st = presence[p.id] || 'present';
-              const opts = [
-                { k: 'present', lbl: t('sea.pPresent'), c: '#1E7B34', bg: '#E6F4EA' },
-                { k: 'late', lbl: t('sea.pLate'), c: '#8A6D1B', bg: '#FBF1D6' },
-                { k: 'absent', lbl: t('sea.pAbsent'), c: '#C0392B', bg: '#FDECEA' },
-              ];
-              return (
-                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{p.first_name} {p.last_name || ''}</span>
-                  <div style={{ display: 'flex', gap: 5 }}>
-                    {opts.map((o) => {
-                      const on = st === o.k;
-                      return (
-                        <button key={o.k} type="button" onClick={() => setPresence((m) => ({ ...m, [p.id]: o.k }))}
-                          style={{ border: 'none', borderRadius: 14, padding: '5px 9px', fontSize: 11, fontWeight: 700,
-                            cursor: 'pointer', fontFamily: 'inherit',
-                            background: on ? o.c : o.bg, color: on ? '#fff' : o.c, opacity: on ? 1 : 0.75 }}>
-                          {o.lbl}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="card">
-            <div className="label" style={{ marginBottom: 8 }}>{t('sea.challenge')}</div>
-            <input className="input" value={defi.name} onChange={(e) => setDefi({ ...defi, name: e.target.value })} placeholder={t('sea.challengeNamePh')} />
-            <input className="input" value={defi.home_exercise} onChange={(e) => setDefi({ ...defi, home_exercise: e.target.value })} placeholder={t('sea.homeExPh')} />
-            <input className="input" style={{ marginBottom: 0 }} value={defi.tip} onChange={(e) => setDefi({ ...defi, tip: e.target.value })} placeholder={t('sea.tipPh')} />
-          </div>
-
-          <div className="card">
-            <div className="label" style={{ marginBottom: 4 }}>{t('sea.skillsTitle')} <span style={{ textTransform: 'none', fontWeight: 500, color: 'var(--muted)' }}>{t('sea.optional')}</span></div>
+            {step(4, t('sea.skillsTitle'), <span style={{ textTransform: 'none', fontWeight: 500, color: 'var(--muted)' }}> {t('sea.optional')}</span>)}
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
               {t('sea.skillsHint')}
             </div>
@@ -261,14 +281,27 @@ export default function Seance() {
             <button className="btn ghost" type="button" style={{ marginBottom: 0 }} onClick={addValidation}>{t('sea.addSkill')}</button>
           </div>
 
+          {/* ===== 5. Défi de la semaine ===== */}
           <div className="card">
-            <div className="label" style={{ marginBottom: 6 }}>{t('sea.motCoach')}</div>
+            {step(5, t('sea.challenge'))}
+            <input className="input" value={defi.name} onChange={(e) => setDefi({ ...defi, name: e.target.value })} placeholder={t('sea.challengeNamePh')} />
+            <input className="input" value={defi.home_exercise} onChange={(e) => setDefi({ ...defi, home_exercise: e.target.value })} placeholder={t('sea.homeExPh')} />
+            <input className="input" style={{ marginBottom: 0 }} value={defi.tip} onChange={(e) => setDefi({ ...defi, tip: e.target.value })} placeholder={t('sea.tipPh')} />
+          </div>
+
+          {/* ===== 6. Mot du coach + objectif ===== */}
+          <div className="card">
+            {step(6, t('sea.motCoach'))}
             <input className="input" value={mot} onChange={(e) => setMot(e.target.value)} placeholder={t('sea.motPh')} />
             <div className="label" style={{ marginBottom: 6 }}>{t('sea.objective')}</div>
             <input className="input" style={{ marginBottom: 0 }} value={objectif} onChange={(e) => setObjectif(e.target.value)} placeholder={t('sea.objectivePh')} />
           </div>
 
-          <button className="btn" disabled={busy} onClick={publish}>{busy ? t('sea.publishing') : t('sea.publish')}</button>
+          {/* ===== Publication ===== */}
+          <button className="btn" disabled={busy} onClick={publish}
+            style={{ marginTop: 4, padding: 16, fontSize: 16, borderRadius: 16, boxShadow: '0 8px 20px rgba(192,91,68,.28)' }}>
+            {busy ? t('sea.publishing') : t('sea.publish')}
+          </button>
         </>
       )}
     </div>
