@@ -16,7 +16,7 @@ function initials(name) {
 
 export default function Club() {
   const router = useRouter();
-  const { t } = useT();
+  const { t, lang } = useT();
   const [ready, setReady] = useState(false);
   const [tab, setTab] = useState('equipes');
   const [club, setClub] = useState(null);
@@ -52,7 +52,7 @@ export default function Club() {
   }, []);
 
   const loadTeams = useCallback(async (clubId, keep) => {
-    const { data } = await supabase.from('teams').select('id, name, category, sport_id, sports(name_fr, icon)').eq('club_id', clubId).order('name');
+    const { data } = await supabase.from('teams').select('id, name, category, sport_id, sports(name_fr, name_en, icon)').eq('club_id', clubId).order('name');
     setTeams(data || []);
     setTeamId((cur) => {
       const next = keep || cur;
@@ -75,7 +75,7 @@ export default function Club() {
       const { data: mem } = await supabase.from('memberships').select('club_id, clubs(id, name, join_code)').eq('role', 'admin').limit(1);
       const c = mem && mem[0] ? mem[0].clubs : null;
       setClub(c);
-      const { data: sp } = await supabase.from('sports').select('id, name_fr, icon').order('name_fr');
+      const { data: sp } = await supabase.from('sports').select('id, name_fr, name_en, icon').order('name_fr');
       setSports(sp || []);
       if (sp && sp[0]) setTeamSport(sp[0].id);
       if (c) await loadTeams(c.id);
@@ -162,6 +162,8 @@ export default function Club() {
     </div>
   );
 
+  /** Nom du sport dans la langue active, avec repli sur le français. */
+  const sportName = (s) => (lang === 'en' ? s?.name_en || s?.name_fr : s?.name_fr) || '';
   const currentTeam = teams.find((t) => t.id === teamId);
   const currentTeamName = currentTeam?.name || t('club.theTeam');
   const sportCount = new Set(teams.map((tm) => tm.sport_id).filter(Boolean)).size;
@@ -176,7 +178,7 @@ export default function Club() {
     <div className="card">
       <div className="label" style={{ marginBottom: 6 }}>{t('club.teamConcerned')}</div>
       <select className="input" style={{ marginBottom: 0 }} value={teamId} onChange={(e) => setTeamId(e.target.value)}>
-        {teams.map((tm) => <option key={tm.id} value={tm.id}>{tm.sports?.icon} {tm.name}</option>)}
+        {teams.map((tm) => <option key={tm.id} value={tm.id}>{tm.sports?.icon} {tm.name} · {sportName(tm.sports)}</option>)}
       </select>
     </div>
   );
@@ -263,7 +265,7 @@ export default function Club() {
             <div className="label" style={{ marginBottom: 8 }}>{t('club.createTeam')}</div>
             <input className="input" value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder={t('club.teamNamePh')} />
             <select className="input" value={teamSport} onChange={(e) => setTeamSport(e.target.value)}>
-              {sports.map((s) => <option key={s.id} value={s.id}>{s.icon} {s.name_fr}</option>)}
+              {sports.map((s) => <option key={s.id} value={s.id}>{s.icon} {sportName(s)}</option>)}
             </select>
             <button className="btn" disabled={busy} onClick={addTeam}>{busy ? '…' : t('club.doCreateTeam')}</button>
           </div>
@@ -280,7 +282,7 @@ export default function Club() {
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="q" style={{ fontWeight: 700, fontSize: 15 }}>{tm.name}</div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{tm.sports?.name_fr}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{sportName(tm.sports)}</div>
               </div>
               {tm.category && (
                 <span className="pill" style={{ padding: '5px 10px', fontSize: 11 }}>{tm.category}</span>
