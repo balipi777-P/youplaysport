@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../lib/supabaseClient';
 import { loadMyChildren, pickChild, setStoredChildId } from '../lib/children';
 import { useT, LangToggle } from '../lib/i18n';
+import BottomNav, { BOTTOM_NAV_HEIGHT } from './components/BottomNav';
 
 const AXIS_EMOJI = {
   physique: '💪', motricite: '🤸', technique: '🎯',
@@ -84,8 +85,19 @@ export default function Home() {
   const defi = session?.session_challenge;
   const axisLabel = (a) => `${AXIS_EMOJI[a] || ''} ${t(`axis.${a}`)}`.trim();
 
+  /* Onglets de la barre basse : le rôle vient des memberships déjà chargés. */
+  const navRole = staff ? staff.role : (memberships.some((m) => m.role === 'athlete') ? 'athlete' : 'parent');
+
+  /* Date du jour : « MERCREDI 10 SEPTEMBRE 2026 » / « WEDNESDAY 10 SEPTEMBER 2026 ». */
+  const todayLabel = new Date()
+    .toLocaleDateString(lang === 'en' ? 'en-GB' : 'fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    .toUpperCase();
+
+  /* Initiales d'un enfant, pour la pastille du sélecteur. */
+  const childInitials = (c) => `${(c.first_name || '')[0] || ''}${(c.last_name || '')[0] || ''}`.toUpperCase();
+
   return (
-    <div className="wrap">
+    <div className="wrap" style={{ paddingBottom: BOTTOM_NAV_HEIGHT + 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
         <div className="brand">
           <div className="logo">Y</div>
@@ -101,30 +113,47 @@ export default function Home() {
 
       {err && <div className="error">{err}</div>}
 
-      {/* Sélecteur d'enfant (si plusieurs) */}
-      {children.length > 1 && player && (
-        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 14 }}>
-          {children.map((c) => {
-            const on = c.id === player.id;
-            return (
-              <button key={c.id} type="button" onClick={() => switchChild(c.id)}
-                style={{ border: 'none', borderRadius: 18, padding: '7px 13px', fontSize: 13, fontWeight: 700,
-                  cursor: 'pointer', fontFamily: 'inherit',
-                  background: on ? 'var(--brand)' : '#F1E9E1', color: on ? '#fff' : '#57534A' }}>
-                {c.first_name}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
       {/* ---- Vue Parent : le journal ---- */}
       {player && (
         <>
-          <div style={{ marginBottom: 4, color: 'var(--muted)', fontSize: 13, fontWeight: 600 }}>{t('home.dayOf')}</div>
-          <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.4px', margin: '0 0 10px' }}>
-            {player.first_name} {player.last_name}
+          <div style={{ marginBottom: 3, color: 'var(--muted)', fontSize: 10.5, fontWeight: 800, letterSpacing: '.9px' }}>
+            {todayLabel}
+          </div>
+          <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.4px', margin: '0 0 12px' }}>
+            {t('home.todayTitle')}
           </h1>
+
+          {/* Sélecteur d'enfant (si plusieurs) */}
+          {children.length > 1 && (
+            <>
+              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 8 }}>
+                {children.map((c) => {
+                  const on = c.id === player.id;
+                  const sub = [c.teams?.name, c.teams?.category].filter(Boolean).join(' · ');
+                  return (
+                    <button key={c.id} type="button" onClick={() => switchChild(c.id)}
+                      style={{ border: 'none', borderRadius: 16, padding: '7px 12px 7px 7px', textAlign: 'left',
+                        cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8,
+                        background: on ? 'var(--brand)' : '#F1E9E1', color: on ? '#fff' : '#57534A' }}>
+                      <span className="q" style={{ width: 26, height: 26, flex: '0 0 26px', borderRadius: 9,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800,
+                        background: on ? 'rgba(255,255,255,.24)' : '#fff', color: on ? '#fff' : 'var(--brand-dark)' }}>
+                        {childInitials(c)}
+                      </span>
+                      <span>
+                        <span style={{ display: 'block', fontSize: 13, fontWeight: 700 }}>{c.first_name}</span>
+                        {sub && <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, opacity: .8 }}>{sub}</span>}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 14 }}>
+                {t('home.oneAccount')}
+              </div>
+            </>
+          )}
+
           <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
             <button className="btn ghost" style={{ marginBottom: 0 }} onClick={() => router.push('/carnet')}>{t('home.carnet')}</button>
             <button className="btn ghost" style={{ marginBottom: 0 }} onClick={() => router.push('/agenda')}>{t('home.agenda')}</button>
@@ -220,6 +249,8 @@ export default function Home() {
           </p>
         </div>
       )}
+
+      <BottomNav role={navRole} />
     </div>
   );
 }
