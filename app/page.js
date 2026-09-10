@@ -39,6 +39,10 @@ export default function Home() {
   const [convocation, setConvocation] = useState(null);
   const [allSkills, setAllSkills] = useState([]);
   const [rsvpBusy, setRsvpBusy] = useState(false);
+  /* Tableau de bord staff : équipes encadrées, dernière séance publiée, identité. */
+  const [staffTeams, setStaffTeams] = useState([]);
+  const [staffSession, setStaffSession] = useState(null);
+  const [staffName, setStaffName] = useState('');
 
   const loadChildData = useCallback(async (p) => {
     setPlayer(p || null);
@@ -83,6 +87,56 @@ export default function Home() {
     setAllSkills(sk || []);
   }, []);
 
+  /* Tableau de bord staff. Les équipes viennent de deux sources selon le rôle —
+     coach_teams pour un coach, toutes les équipes du club pour un dirigeant —
+     fusionnées par id : un compte qui cumule les deux ne voit pas de doublon. */
+  const loadStaffData = useCallback(async (mem, uid, fallbackEmail) => {
+    const TEAM_COLS = 'id, name, category, club_id, sport_id, clubs(name), sports(name_fr, name_en, icon)';
+    const byId = new Map();
+    if (mem.some((m) => m.role === 'coach')) {
+      const { data } = await supabase.from('coach_teams')
+        .select(`teams(${TEAM_COLS})`).eq('coach_user_id', uid);
+      for (const r of data || []) if (r.teams) byId.set(r.teams.id, { ...r.teams });
+    }
+    const adminClubs = mem.filter((m) => m.role === 'admin').map((m) => m.club_id);
+    if (adminClubs.length) {
+      const { data } = await supabase.from('teams').select(TEAM_COLS).in('club_id', adminClubs);
+      for (const tm of data || []) byId.set(tm.id, { ...tm });
+    }
+    const list = [...byId.values()];
+    const ids = list.map((tm) => tm.id);
+
+    /* Effectifs en une seule requête groupée plutôt qu'un count par équipe. */
+    if (ids.length) {
+      const { data: pls } = await supabase.from('players').select('id, team_id').in('team_id', ids);
+      const per = {};
+      for (const p of pls || []) per[p.team_id] = (per[p.team_id] || 0) + 1;
+      for (const tm of list) tm.memberCount = per[tm.id] || 0;
+    }
+    list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    setStaffTeams(list);
+
+    /* Séance du jour : la plus récente publiée parmi les équipes encadrées. */
+    let se = null;
+    if (ids.length) {
+      const { data: ss } = await supabase.from('sessions')
+        .select('id, team_id, date, theme, teams(name), published_at')
+        .in('team_id', ids).not('published_at', 'is', null)
+        .order('date', { ascending: false }).limit(1);
+      se = (ss && ss[0]) || null;
+    }
+    if (se) {
+      const { count: total } = await supabase.from('attendance')
+        .select('id', { count: 'exact', head: true }).eq('session_id', se.id);
+      const { count: presents } = await supabase.from('attendance')
+        .select('id', { count: 'exact', head: true }).eq('session_id', se.id).eq('status', 'present');
+      setStaffSession({ ...se, presents: presents || 0, total: total || 0 });
+    } else setStaffSession(null);
+
+    const { data: au } = await supabase.from('app_users').select('full_name, email').eq('id', uid).maybeSingle();
+    setStaffName(au?.full_name || au?.email || fallbackEmail || '');
+  }, []);
+
   const load = useCallback(async () => {
     setErr('');
     const { data: uinfo } = await supabase.auth.getUser();
@@ -96,6 +150,9 @@ export default function Home() {
     const { data: mem } = await supabase
       .from('memberships').select('role, club_id, clubs(name, join_code)');
     setMemberships(mem || []);
+    if (uid && (mem || []).some((m) => m.role === 'admin' || m.role === 'coach')) {
+      await loadStaffData(mem || [], uid, uinfo?.user?.email);
+    }
     const kids = await loadMyChildren();
     setChildren(kids);
     const chosen = pickChild(kids);
@@ -103,7 +160,7 @@ export default function Home() {
     const { data: sa } = await supabase.rpc('sa_is_admin');
     setIsSA(!!sa);
     return { mem: mem || [], hasChild: !!chosen };
-  }, [loadChildData]);
+  }, [loadChildData, loadStaffData]);
 
   useEffect(() => {
     (async () => {
@@ -176,14 +233,19 @@ export default function Home() {
   /* Initiales d'un enfant, pour la pastille du sélecteur. */
   const childInitials = (c) => `${(c.first_name || '')[0] || ''}${(c.last_name || '')[0] || ''}`.toUpperCase();
 
+  /* Nom du sport dans la langue active. */
+  const sportName = (sp) => (lang === 'en' ? sp?.name_en || sp?.name_fr : sp?.name_fr) || '';
+
   /* Sous-ligne d'une pastille : « {icône} {club} · {sport} », sans les infos absentes. */
   const childSub = (c) => {
     const sp = c.teams?.sports;
-    const sport = (lang === 'en' ? sp?.name_en || sp?.name_fr : sp?.name_fr) || '';
-    const text = [c.teams?.clubs?.name, sport].filter(Boolean).join(' · ');
+    const text = [c.teams?.clubs?.name, sportName(sp)].filter(Boolean).join(' · ');
     if (!text) return '';
     return sp?.icon ? `${sp.icon} ${text}` : text;
   };
+
+  /* « n licenciés », avec le singulier. */
+  const memberLabel = (n) => t(n === 1 ? 'coach.memberOne' : 'coach.memberMany', { n });
 
   return (
     <div className="wrap" style={{ paddingBottom: BOTTOM_NAV_HEIGHT + 24 }}>
@@ -358,16 +420,49 @@ export default function Home() {
         </>
       )}
 
-      {/* ---- Vue Staff (coach / dirigeant) ---- */}
+      {/* ---- Vue Staff (coach / dirigeant) : tableau de bord ---- */}
       {staff && (
         <>
           {player && <div style={{ borderTop: '1px solid var(--border)', margin: '20px 0 4px' }} />}
+
+          {/* 1. Identité */}
           <div style={{ marginBottom: 4, color: 'var(--muted)', fontSize: 13, fontWeight: 600 }}>
             {t('home.space')} {t(`role.${staff.role}`)}
+            {staff.clubs?.name ? ` · ${staff.clubs.name}` : ''}
           </div>
-          <h1 className="q" style={{ fontSize: 22, letterSpacing: '-0.4px', margin: '0 0 16px' }}>
-            {staff.clubs?.name || t('home.yourClub')}
+          <h1 className="q" style={{ fontSize: 22, letterSpacing: '-0.4px', margin: '0 0 16px', wordBreak: 'break-word' }}>
+            {staffName || staff.clubs?.name || t('home.yourClub')}
           </h1>
+
+          {/* 2. Séance du jour */}
+          <div className="label" style={{ marginBottom: 8 }}>{t('coach.sessionOfDay')}</div>
+          {staffSession ? (
+            <div className="card" style={{ background: '#E9F1EA', border: 'none' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, marginBottom: 4 }}>
+                <span className="q" style={{ fontWeight: 700, fontSize: 16, color: '#2E5A43' }}>
+                  {staffSession.teams?.name}
+                </span>
+                <span style={{ fontSize: 12, color: '#4F7A63', whiteSpace: 'nowrap' }}>{fmt(staffSession.date, lang)}</span>
+              </div>
+              {staffSession.theme && (
+                <div style={{ fontSize: 13, color: '#3E6B54', lineHeight: 1.5 }}>{t('home.theme')} : {staffSession.theme}</div>
+              )}
+              <div style={{ display: 'inline-block', marginTop: 10, padding: '5px 11px', borderRadius: 999,
+                background: '#fff', color: '#2E5A43', fontSize: 12, fontWeight: 700 }}>
+                ✓ {t('coach.presentOf', { n: staffSession.presents, total: staffSession.total })}
+              </div>
+              <button className="btn" style={{ marginTop: 12, marginBottom: 0 }} onClick={() => router.push('/seance')}>
+                {t('coach.openSession')}
+              </button>
+            </div>
+          ) : (
+            <div className="card">
+              <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>{t('coach.noSessionYet')}</p>
+              <button className="btn" style={{ marginBottom: 0 }} onClick={() => router.push('/seance')}>{t('home.createSession')}</button>
+            </div>
+          )}
+
+          {/* Code d'invitation du club (dirigeant) */}
           {staff.role === 'admin' && staff.clubs?.join_code && (
             <div className="card" style={{ background: 'var(--peach)', border: 'none' }}>
               <div className="label" style={{ color: 'var(--brand-dark)' }}>{t('home.inviteCode')}</div>
@@ -379,11 +474,46 @@ export default function Home() {
               </div>
             </div>
           )}
-          {staff.role === 'admin' && (
-            <button className="btn" style={{ marginBottom: 10 }} onClick={() => router.push('/club')}>{t('home.manageClub')}</button>
+
+          {/* 3. Mes groupes */}
+          <div className="label" style={{ margin: '18px 0 8px' }}>{t('coach.myGroups')}</div>
+          {staffTeams.length === 0 ? (
+            <div className="card"><p style={{ margin: 0, color: 'var(--muted)', fontSize: 13 }}>{t('club.noTeam')}</p></div>
+          ) : (
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              {staffTeams.map((tm, i) => (
+                <button key={tm.id} type="button"
+                  onClick={() => router.push(staff.role === 'admin' ? '/club' : '/seance')}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 11, padding: '12px 14px',
+                    background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                    borderTop: i === 0 ? 'none' : '1px solid var(--border)' }}>
+                  <span style={{ width: 34, height: 34, flex: '0 0 34px', borderRadius: 11, background: 'var(--peach)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
+                    {tm.sports?.icon || '🏅'}
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontWeight: 700, fontSize: 13.5, color: 'var(--ink)' }}>{tm.name}</span>
+                    <span style={{ display: 'block', fontSize: 11.5, color: 'var(--muted)', marginTop: 1 }}>
+                      {[tm.clubs?.name, tm.category, sportName(tm.sports)].filter(Boolean).join(' · ')}
+                    </span>
+                  </span>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--brand-dark)', whiteSpace: 'nowrap' }}>
+                    {memberLabel(tm.memberCount || 0)}
+                  </span>
+                </button>
+              ))}
+            </div>
           )}
-          <button className="btn" style={{ marginBottom: 10 }} onClick={() => router.push('/seance')}>{t('home.createSession')}</button>
-          <button className="btn ghost" style={{ marginBottom: 10 }} onClick={() => router.push('/evenements')}>{t('home.eventsAgenda')}</button>
+
+          {/* 4. Accès rapide */}
+          <div className="label" style={{ margin: '18px 0 8px' }}>{t('coach.quickAccess')}</div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+            <button className="btn" style={{ marginBottom: 0 }} onClick={() => router.push('/seance')}>{t('coach.newSession')}</button>
+            <button className="btn ghost" style={{ marginBottom: 0 }} onClick={() => router.push('/evenements')}>{t('coach.newEvent')}</button>
+          </div>
+          {staff.role === 'admin' && (
+            <button className="btn ghost" style={{ marginBottom: 10 }} onClick={() => router.push('/club')}>{t('home.manageClub')}</button>
+          )}
         </>
       )}
 
