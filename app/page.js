@@ -90,7 +90,7 @@ export default function Home() {
   /* Tableau de bord staff. Les équipes viennent de deux sources selon le rôle —
      coach_teams pour un coach, toutes les équipes du club pour un dirigeant —
      fusionnées par id : un compte qui cumule les deux ne voit pas de doublon. */
-  const loadStaffData = useCallback(async (mem, uid, fallbackEmail) => {
+  const loadStaffData = useCallback(async (mem, uid) => {
     const TEAM_COLS = 'id, name, category, club_id, sport_id, clubs(name), sports(name_fr, name_en, icon)';
     const byId = new Map();
     if (mem.some((m) => m.role === 'coach')) {
@@ -133,8 +133,10 @@ export default function Home() {
       setStaffSession({ ...se, presents: presents || 0, total: total || 0 });
     } else setStaffSession(null);
 
-    const { data: au } = await supabase.from('app_users').select('full_name, email').eq('id', uid).maybeSingle();
-    setStaffName(au?.full_name || au?.email || fallbackEmail || '');
+    /* Uniquement full_name : l'email ne doit jamais servir de titre. Vide ici,
+       le rendu retombe sur un libellé i18n. */
+    const { data: au } = await supabase.from('app_users').select('full_name').eq('id', uid).maybeSingle();
+    setStaffName((au?.full_name || '').trim());
   }, []);
 
   const load = useCallback(async () => {
@@ -151,7 +153,7 @@ export default function Home() {
       .from('memberships').select('role, club_id, clubs(name, join_code)');
     setMemberships(mem || []);
     if (uid && (mem || []).some((m) => m.role === 'admin' || m.role === 'coach')) {
-      await loadStaffData(mem || [], uid, uinfo?.user?.email);
+      await loadStaffData(mem || [], uid);
     }
     const kids = await loadMyChildren();
     setChildren(kids);
@@ -431,7 +433,7 @@ export default function Home() {
             {staff.clubs?.name ? ` · ${staff.clubs.name}` : ''}
           </div>
           <h1 className="q" style={{ fontSize: 22, letterSpacing: '-0.4px', margin: '0 0 16px', wordBreak: 'break-word' }}>
-            {staffName || staff.clubs?.name || t('home.yourClub')}
+            {staffName || t('coach.fallbackName')}
           </h1>
 
           {/* 2. Séance du jour */}
