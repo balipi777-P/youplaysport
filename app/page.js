@@ -85,8 +85,12 @@ export default function Home() {
   const defi = session?.session_challenge;
   const axisLabel = (a) => `${AXIS_EMOJI[a] || ''} ${t(`axis.${a}`)}`.trim();
 
-  /* Onglets de la barre basse : le rôle vient des memberships déjà chargés. */
-  const navRole = staff ? staff.role : (memberships.some((m) => m.role === 'athlete') ? 'athlete' : 'parent');
+  /* Onglets de la barre basse : ils suivent la vue réellement affichée, pas le rôle
+     le plus élevé. Un compte multi-rôles (admin + parent) voit son journal, donc la
+     nav parent ; l'accès staff reste les boutons de l'Espace Dirigeant plus bas. */
+  const navRole = player
+    ? (memberships.some((m) => m.role === 'athlete') ? 'athlete' : 'parent')
+    : (staff ? 'coach' : 'parent');
 
   /* Date du jour : « MERCREDI 10 SEPTEMBRE 2026 » / « WEDNESDAY 10 SEPTEMBER 2026 ». */
   const todayLabel = new Date()
