@@ -12,6 +12,14 @@ const AXIS_EMOJI = {
   tactique: '♟️', mental: '🧠', etat_esprit: '🤝', hygiene: '🌙',
 };
 
+/* Carnet de l'athlète : les 3 états de skill_status, du plus acquis au moins acquis,
+   avec le remplissage de barre et la clé i18n de chacun. */
+const SKILL_STATES = [
+  { status: 'validee', key: 'skill.validee', pct: 100, fill: 'var(--brand)' },
+  { status: 'en_progres', key: 'skill.enProgres', pct: 60, fill: '#D97A5C' },
+  { status: 'a_travailler', key: 'skill.aTravailler', pct: 20, fill: '#E3B49F' },
+];
+
 export default function Home() {
   const router = useRouter();
   const { t, lang } = useT();
@@ -24,6 +32,13 @@ export default function Home() {
   const [skills, setSkills] = useState([]);
   const [isSA, setIsSA] = useState(false);
   const [err, setErr] = useState('');
+  /* Vue athlète : fiches dont l'utilisateur est lui-même le licencié, et les données
+     propres à cette vue (prochaine convocation, carnet complet). */
+  const [myPlayerIds, setMyPlayerIds] = useState([]);
+  const [nextEvent, setNextEvent] = useState(null);
+  const [convocation, setConvocation] = useState(null);
+  const [allSkills, setAllSkills] = useState([]);
+  const [rsvpBusy, setRsvpBusy] = useState(false);
 
   const loadChildData = useCallback(async (p) => {
     setPlayer(p || null);
@@ -45,8 +60,39 @@ export default function Home() {
     setSkills(sk || []);
   }, []);
 
+  /* Données de la vue athlète : la prochaine échéance de son équipe, sa convocation
+     pour celle-ci, et l'intégralité de son carnet (les 3 états, pas seulement les acquis). */
+  const loadAthleteData = useCallback(async (p) => {
+    let ev = null;
+    if (p.team_id) {
+      const { data: evs } = await supabase
+        .from('events').select('id, type, opponent, place, datetime')
+        .eq('team_id', p.team_id)
+        .gte('datetime', new Date().toISOString())
+        .order('datetime').limit(1);
+      ev = (evs && evs[0]) || null;
+    }
+    setNextEvent(ev);
+    if (ev) {
+      const { data: conv } = await supabase
+        .from('event_convocations').select('id, response, responded_at')
+        .eq('event_id', ev.id).eq('player_id', p.id).maybeSingle();
+      setConvocation(conv || null);
+    } else setConvocation(null);
+    const { data: sk } = await supabase.from('skills').select('label, status, axis').eq('player_id', p.id);
+    setAllSkills(sk || []);
+  }, []);
+
   const load = useCallback(async () => {
     setErr('');
+    const { data: uinfo } = await supabase.auth.getUser();
+    const uid = uinfo?.user?.id;
+    /* Une fiche dont user_id vaut l'utilisateur connecté, c'est un athlète autonome
+       (et non un enfant suivi par un parent) : c'est ce qui bascule l'accueil en « tu ». */
+    const { data: own } = uid
+      ? await supabase.from('players').select('id').eq('user_id', uid)
+      : { data: [] };
+    setMyPlayerIds((own || []).map((r) => r.id));
     const { data: mem } = await supabase
       .from('memberships').select('role, club_id, clubs(name, join_code)');
     setMemberships(mem || []);
@@ -69,6 +115,28 @@ export default function Home() {
     })();
   }, [router, load]);
 
+  /* La fiche affichée est-elle celle de l'utilisateur lui-même ? On (re)charge alors
+     ses données d'athlète ; sinon on les vide pour que la vue Parent reste intacte. */
+  useEffect(() => {
+    if (!player || !myPlayerIds.includes(player.id)) {
+      setNextEvent(null); setConvocation(null); setAllSkills([]);
+      return;
+    }
+    loadAthleteData(player);
+  }, [player, myPlayerIds, loadAthleteData]);
+
+  /* Réponse à la convocation. L'enum rsvp_response ne connaît que 'present' et 'absent'. */
+  async function respond(answer) {
+    if (!player || !nextEvent || rsvpBusy) return;
+    setRsvpBusy(true); setErr('');
+    const { error } = await supabase.from('event_convocations')
+      .update({ response: answer, responded_at: new Date().toISOString() })
+      .eq('event_id', nextEvent.id).eq('player_id', player.id);
+    if (error) setErr(error.message);
+    else await loadAthleteData(player);
+    setRsvpBusy(false);
+  }
+
   function switchChild(id) {
     setStoredChildId(id);
     const c = children.find((x) => x.id === id);
@@ -85,12 +153,20 @@ export default function Home() {
   const defi = session?.session_challenge;
   const axisLabel = (a) => `${AXIS_EMOJI[a] || ''} ${t(`axis.${a}`)}`.trim();
 
+  /* L'utilisateur consulte sa propre fiche : accueil au « tu ». */
+  const isAthlete = !!player && myPlayerIds.includes(player.id);
+
   /* Onglets de la barre basse : ils suivent la vue réellement affichée, pas le rôle
      le plus élevé. Un compte multi-rôles (admin + parent) voit son journal, donc la
      nav parent ; l'accès staff reste les boutons de l'Espace Dirigeant plus bas. */
-  const navRole = player
-    ? (memberships.some((m) => m.role === 'athlete') ? 'athlete' : 'parent')
-    : (staff ? 'coach' : 'parent');
+  const navRole = player ? (isAthlete ? 'athlete' : 'parent') : (staff ? 'coach' : 'parent');
+
+  /* Convocation : « Ce soir » si l'échéance tombe aujourd'hui, sinon « À venir ». */
+  const evDate = nextEvent?.datetime ? new Date(nextEvent.datetime) : null;
+  const evIsToday = !!evDate && evDate.toDateString() === new Date().toDateString();
+  const evTime = evDate
+    ? evDate.toLocaleTimeString(lang === 'en' ? 'en-GB' : 'fr-FR', { hour: '2-digit', minute: '2-digit' })
+    : '';
 
   /* Date du jour : « MERCREDI 10 SEPTEMBRE 2026 » / « WEDNESDAY 10 SEPTEMBER 2026 ». */
   const todayLabel = new Date()
@@ -133,11 +209,36 @@ export default function Home() {
             {todayLabel}
           </div>
           <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.4px', margin: '0 0 12px' }}>
-            {t('home.todayTitle')}
+            {isAthlete ? t('athlete.hello', { name: player.first_name }) : t('home.todayTitle')}
           </h1>
 
-          {/* Sélecteur d'enfant (visible dès un enfant) */}
-          {children.length > 0 && (
+          {/* Convocation à venir + réponse (athlète uniquement) */}
+          {isAthlete && nextEvent && convocation && (
+            <div className="card" style={{ border: '2px solid var(--brand)' }}>
+              <span className="pill">{evIsToday ? t('athlete.tonight') : t('athlete.upcoming')}</span>
+              <div className="q" style={{ fontSize: 17, fontWeight: 700, margin: '10px 0 2px' }}>
+                {t(`event.${nextEvent.type}`)}{nextEvent.opponent ? ` · ${nextEvent.opponent}` : ''}
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+                {[evDate && `${fmt(nextEvent.datetime, lang)}${evTime ? ` · ${evTime}` : ''}`, nextEvent.place && `📍 ${nextEvent.place}`]
+                  .filter(Boolean).join('  ')}
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                {[['present', 'rsvp.yes'], ['absent', 'rsvp.no']].map(([answer, key]) => {
+                  const on = convocation.response === answer;
+                  return (
+                    <button key={answer} type="button" disabled={rsvpBusy} onClick={() => respond(answer)}
+                      className={on ? 'btn' : 'btn ghost'} style={{ marginBottom: 0, flex: 1, opacity: rsvpBusy ? .6 : 1 }}>
+                      {t(key)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Sélecteur d'enfant (visible dès un enfant, hors vue athlète) */}
+          {!isAthlete && children.length > 0 && (
             <>
               <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: children.length > 1 ? 8 : 14 }}>
                 {children.map((c) => {
@@ -177,6 +278,9 @@ export default function Home() {
           {!session && <div className="card"><p style={{ margin: 0, color: 'var(--muted)' }}>{t('home.noSession')}</p></div>}
           {session && (
             <>
+              {isAthlete && (
+                <div className="label" style={{ marginBottom: 8 }}>{t('athlete.lastSession')}</div>
+              )}
               <div className="card" style={{ background: 'var(--brand)', color: '#fff', border: 'none' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                   <span className="q" style={{ fontWeight: 700, fontSize: 16 }}>⚽ {player.teams?.name}</span>
@@ -196,7 +300,8 @@ export default function Home() {
                   </div>
                 ))}
               </div>
-              {skills.length > 0 && (
+              {/* Vue parent seulement : chez l'athlète, « Ton carnet » plus bas dit déjà tout. */}
+              {!isAthlete && skills.length > 0 && (
                 <div className="card" style={{ background: 'var(--peach)', border: 'none' }}>
                   <div className="label" style={{ color: 'var(--brand-dark)' }}>{t('home.skillValidated')}</div>
                   <div className="q" style={{ fontSize: 15, fontWeight: 700, color: '#5F2A1C', marginTop: 4 }}>{skills.map((s) => s.label).join(', ')} ✓</div>
@@ -215,6 +320,39 @@ export default function Home() {
                   {objectif && <div className="pill" style={{ marginTop: 10 }}>🎯 {objectif.body}</div>}
                 </div>
               )}
+            </>
+          )}
+
+          {/* Carnet complet de l'athlète : les 3 états, avec barre de progression */}
+          {isAthlete && (
+            <>
+              <div className="label" style={{ margin: '18px 0 8px' }}>{t('athlete.notebook')}</div>
+              <div className="card">
+                {allSkills.length === 0 && (
+                  <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>{t('athlete.noSkills')}</p>
+                )}
+                {SKILL_STATES.map(({ status, key, pct, fill }) => {
+                  const group = allSkills.filter((s) => s.status === status);
+                  if (group.length === 0) return null;
+                  return (
+                    <div key={status} style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.6px', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 7 }}>
+                        {t(key)}
+                      </div>
+                      {group.map((s, i) => (
+                        <div key={i} style={{ marginBottom: 9 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#3D3A33', marginBottom: 4 }}>
+                            {AXIS_EMOJI[s.axis] ? `${AXIS_EMOJI[s.axis]} ` : ''}{s.label}
+                          </div>
+                          <div style={{ height: 7, borderRadius: 4, background: '#F1E9E1', overflow: 'hidden' }}>
+                            <div style={{ width: `${pct}%`, height: '100%', borderRadius: 4, background: fill }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
             </>
           )}
         </>
