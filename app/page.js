@@ -100,6 +100,15 @@ export default function Home() {
   /* Initiales d'un enfant, pour la pastille du sélecteur. */
   const childInitials = (c) => `${(c.first_name || '')[0] || ''}${(c.last_name || '')[0] || ''}`.toUpperCase();
 
+  /* Sous-ligne d'une pastille : « {icône} {club} · {sport} », sans les infos absentes. */
+  const childSub = (c) => {
+    const sp = c.teams?.sports;
+    const sport = (lang === 'en' ? sp?.name_en || sp?.name_fr : sp?.name_fr) || '';
+    const text = [c.teams?.clubs?.name, sport].filter(Boolean).join(' · ');
+    if (!text) return '';
+    return sp?.icon ? `${sp.icon} ${text}` : text;
+  };
+
   return (
     <div className="wrap" style={{ paddingBottom: BOTTOM_NAV_HEIGHT + 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
@@ -127,34 +136,36 @@ export default function Home() {
             {t('home.todayTitle')}
           </h1>
 
-          {/* Sélecteur d'enfant (si plusieurs) */}
-          {children.length > 1 && (
+          {/* Sélecteur d'enfant (visible dès un enfant) */}
+          {children.length > 0 && (
             <>
-              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 8 }}>
+              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: children.length > 1 ? 8 : 14 }}>
                 {children.map((c) => {
                   const on = c.id === player.id;
-                  const sub = [c.teams?.name, c.teams?.category].filter(Boolean).join(' · ');
+                  const sub = childSub(c);
                   return (
                     <button key={c.id} type="button" onClick={() => switchChild(c.id)}
-                      style={{ border: 'none', borderRadius: 16, padding: '7px 12px 7px 7px', textAlign: 'left',
-                        cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8,
+                      style={{ border: 'none', borderRadius: 18, padding: '9px 14px 9px 9px', textAlign: 'left',
+                        cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 9,
                         background: on ? 'var(--brand)' : '#F1E9E1', color: on ? '#fff' : '#57534A' }}>
-                      <span className="q" style={{ width: 26, height: 26, flex: '0 0 26px', borderRadius: 9,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800,
+                      <span className="q" style={{ width: 30, height: 30, flex: '0 0 30px', borderRadius: 10,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800,
                         background: on ? 'rgba(255,255,255,.24)' : '#fff', color: on ? '#fff' : 'var(--brand-dark)' }}>
                         {childInitials(c)}
                       </span>
                       <span>
-                        <span style={{ display: 'block', fontSize: 13, fontWeight: 700 }}>{c.first_name}</span>
-                        {sub && <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, opacity: .8 }}>{sub}</span>}
+                        <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700 }}>{c.first_name}</span>
+                        {sub && <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, opacity: .8, marginTop: 1 }}>{sub}</span>}
                       </span>
                     </button>
                   );
                 })}
               </div>
-              <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 14 }}>
-                {t('home.oneAccount')}
-              </div>
+              {children.length > 1 && (
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 14 }}>
+                  {t('home.oneAccount')}
+                </div>
+              )}
             </>
           )}
 
