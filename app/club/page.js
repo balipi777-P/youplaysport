@@ -7,6 +7,13 @@ import { useT } from '../../lib/i18n';
 
 const TAB_KEYS = ['equipes', 'licencies', 'coachs'];
 
+/** Initiales du club : 2 lettres max (« AS Château-Thierry » → « AC »). */
+function initials(name) {
+  return (name || '')
+    .split(/\s+/).filter(Boolean).slice(0, 2)
+    .map((w) => w[0]).join('').toUpperCase() || '🏅';
+}
+
 export default function Club() {
   const router = useRouter();
   const { t } = useT();
@@ -17,6 +24,9 @@ export default function Club() {
   const [teams, setTeams] = useState([]);
   const [teamId, setTeamId] = useState('');
   const [players, setPlayers] = useState([]);
+  const [memberCount, setMemberCount] = useState(0);
+  const [coachCount, setCoachCount] = useState(0);
+  const [copied, setCopied] = useState(false);
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
   const [busy, setBusy] = useState(false);
@@ -31,15 +41,26 @@ export default function Club() {
 
   const flash = (msg) => { setOk(msg); setErr(''); setTimeout(() => setOk(''), 3500); };
 
+  /** Licenciés = count sur players ; coachs = distinct coach_user_id sur coach_teams. */
+  const loadStats = useCallback(async (clubId, teamRows) => {
+    const { count } = await supabase.from('players').select('id', { count: 'exact', head: true }).eq('club_id', clubId);
+    setMemberCount(count || 0);
+    const ids = (teamRows || []).map((tm) => tm.id);
+    if (ids.length === 0) { setCoachCount(0); return; }
+    const { data } = await supabase.from('coach_teams').select('coach_user_id').in('team_id', ids);
+    setCoachCount(new Set((data || []).map((r) => r.coach_user_id)).size);
+  }, []);
+
   const loadTeams = useCallback(async (clubId, keep) => {
-    const { data } = await supabase.from('teams').select('id, name, category, sports(name_fr, icon)').eq('club_id', clubId).order('name');
+    const { data } = await supabase.from('teams').select('id, name, category, sport_id, sports(name_fr, icon)').eq('club_id', clubId).order('name');
     setTeams(data || []);
     setTeamId((cur) => {
       const next = keep || cur;
       if (next && (data || []).some((t) => t.id === next)) return next;
       return data && data[0] ? data[0].id : '';
     });
-  }, []);
+    await loadStats(clubId, data || []);
+  }, [loadStats]);
 
   const loadPlayers = useCallback(async (tid) => {
     if (!tid) { setPlayers([]); return; }
@@ -63,6 +84,16 @@ export default function Club() {
   }, [router, loadTeams]);
 
   useEffect(() => { loadPlayers(teamId); }, [teamId, loadPlayers]);
+
+  async function copyCode() {
+    try {
+      await navigator.clipboard.writeText(club.join_code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch { /* clipboard indisponible */ }
+  }
+
+  async function logout() { await supabase.auth.signOut(); router.replace('/login'); }
 
   async function addTeam() {
     setErr(''); setBusy(true);
@@ -93,7 +124,9 @@ export default function Club() {
       if (!pFirst.trim()) throw new Error(t('club.errFirstName'));
       const { error } = await supabase.from('players').insert({ club_id: club.id, team_id: teamId, first_name: pFirst.trim(), last_name: pLast.trim() || null });
       if (error) throw error;
-      setPFirst(''); setPLast(''); flash(t('club.memberAdded')); await loadPlayers(teamId);
+      setPFirst(''); setPLast(''); flash(t('club.memberAdded'));
+      await loadPlayers(teamId);
+      await loadStats(club.id, teams);
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
   }
 
@@ -105,6 +138,7 @@ export default function Club() {
       const { error } = await supabase.rpc('admin_link_coach_by_email', { p_team: teamId, p_email: coachEmail.trim() });
       if (error) throw error;
       setCoachEmail(''); flash(t('club.coachLinked'));
+      await loadStats(club.id, teams);
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
   }
 
@@ -130,6 +164,14 @@ export default function Club() {
 
   const currentTeam = teams.find((t) => t.id === teamId);
   const currentTeamName = currentTeam?.name || t('club.theTeam');
+  const sportCount = new Set(teams.map((tm) => tm.sport_id).filter(Boolean)).size;
+  const stats = [
+    { n: teams.length, label: t('club.statTeams') },
+    { n: memberCount, label: t('club.statMembers') },
+    { n: coachCount, label: t('club.statCoaches') },
+    { n: sportCount, label: t('club.statSports') },
+  ];
+
   const teamSelector = (
     <div className="card">
       <div className="label" style={{ marginBottom: 6 }}>{t('club.teamConcerned')}</div>
@@ -141,16 +183,59 @@ export default function Club() {
 
   return (
     <div className="wrap">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 2 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
         <a href="#" onClick={(e) => { e.preventDefault(); router.push('/'); }} style={{ fontWeight: 700 }}>←</a>
-        <div className="q" style={{ fontWeight: 700, fontSize: 18 }}>{t('club.title')}</div>
+        <div className="q" style={{ fontWeight: 700, fontSize: 18, flex: 1 }}>{t('club.title')}</div>
+        <button type="button" onClick={logout}
+          style={{ border: 'none', background: 'transparent', color: 'var(--brand-dark)', fontFamily: 'inherit',
+            fontSize: 13, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
+          {t('common.logout')}
+        </button>
       </div>
-      <h1 className="q" style={{ fontSize: 22, margin: '2px 0 4px' }}>{club.name}</h1>
-      {club.join_code && (
-        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
-          {t('club.inviteCode')} <b style={{ color: 'var(--brand-dark)', letterSpacing: 1 }}>{club.join_code}</b>
+
+      {/* ===== Carte identité du club ===== */}
+      <div className="card">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div className="q" style={{ width: 54, height: 54, flex: '0 0 54px', borderRadius: 18, background: 'var(--brand)',
+            color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 19, letterSpacing: '.5px' }}>
+            {initials(club.name)}
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div className="q" style={{ fontWeight: 700, fontSize: 19, letterSpacing: '-0.3px' }}>{club.name}</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginTop: 2 }}>
+              {t('club.season', { year: new Date().getFullYear() })}
+            </div>
+          </div>
         </div>
-      )}
+
+        {club.join_code && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14,
+            background: 'var(--peach)', borderRadius: 14, padding: '10px 12px' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="label" style={{ color: '#A8837A' }}>{t('club.inviteCode')}</div>
+              <div style={{ fontWeight: 800, fontSize: 17, letterSpacing: 2, color: 'var(--brand-dark)', marginTop: 2 }}>
+                {club.join_code}
+              </div>
+            </div>
+            <button type="button" onClick={copyCode}
+              style={{ border: 'none', borderRadius: 11, padding: '9px 14px', fontSize: 13, fontWeight: 700,
+                cursor: 'pointer', fontFamily: 'inherit', background: '#fff', color: 'var(--brand-dark)', whiteSpace: 'nowrap' }}>
+              {copied ? t('club.copied') : t('club.copyCode')}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ===== Bandeau de stats ===== */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
+        {stats.map((s) => (
+          <div key={s.label} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16,
+            padding: '12px 4px', textAlign: 'center' }}>
+            <div className="q" style={{ fontWeight: 800, fontSize: 20, lineHeight: 1.1, color: 'var(--brand-dark)' }}>{s.n}</div>
+            <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700, marginTop: 3 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
 
       {/* Onglets */}
       <div style={{ display: 'flex', gap: 6, background: '#F1E9E1', borderRadius: 14, padding: 4, marginBottom: 16 }}>
@@ -183,19 +268,25 @@ export default function Club() {
             <button className="btn" disabled={busy} onClick={addTeam}>{busy ? '…' : t('club.doCreateTeam')}</button>
           </div>
 
-          <div className="card">
-            <div className="label" style={{ marginBottom: 8 }}>{t('club.clubTeams')}</div>
-            {teams.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('club.noTeam')}</div>}
-            {teams.map((tm) => (
-              <div key={tm.id} style={{ display: 'flex', alignItems: 'center', gap: 10, borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 10 }}>
-                <span style={{ fontSize: 18 }}>{tm.sports?.icon || '⚽'}</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>{tm.name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tm.sports?.name_fr}</div>
-                </div>
+          <div className="label" style={{ margin: '0 0 8px 4px' }}>{t('club.clubTeams')}</div>
+          {teams.length === 0 && (
+            <div className="card"><p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>{t('club.noTeam')}</p></div>
+          )}
+          {teams.map((tm) => (
+            <div key={tm.id} className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14 }}>
+              <div style={{ width: 44, height: 44, flex: '0 0 44px', borderRadius: 15, background: 'var(--peach)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 21 }}>
+                {tm.sports?.icon || '⚽'}
               </div>
-            ))}
-          </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="q" style={{ fontWeight: 700, fontSize: 15 }}>{tm.name}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{tm.sports?.name_fr}</div>
+              </div>
+              {tm.category && (
+                <span className="pill" style={{ padding: '5px 10px', fontSize: 11 }}>{tm.category}</span>
+              )}
+            </div>
+          ))}
 
           <div className="card" style={{ background: 'var(--peach)', border: 'none' }}>
             <div className="q" style={{ fontWeight: 700, fontSize: 14, color: '#5F2A1C', marginBottom: 4 }}>{t('club.demoTitle')}</div>
