@@ -7,12 +7,17 @@ import { loadMyChildren } from '../../lib/children';
 import { useT } from '../../lib/i18n';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 
-/* Calendrier de la famille : tous les enfants rattachés au compte, tous leurs clubs,
-   sur un seul mois. Vue privée au parent — chaque club n'y voit rien.
-   Deux sources, et seulement celles-là :
+/* Calendrier, sur un seul mois, dans la même grille pour tout le monde.
+   Côté famille : tous les enfants rattachés au compte, tous leurs clubs. Vue
+   privée au parent — chaque club n'y voit rien. Deux sources, et seulement
+   celles-là :
      · les convocations de l'enfant (event_convocations → events), qui disent qu'il
        est attendu sur un événement daté ;
      · les séances publiées de son groupe (sessions), qui sont l'entraînement.
+   Côté coach : les séances et les événements de ses propres groupes, agrégés.
+   La RLS fait le tri — coach_teams et les clubs où il est dirigeant, rien
+   d'autre. Ses séances non publiées comptent aussi : ce sont celles qu'il a
+   préparées, et son calendrier doit les montrer.
    Aucun libellé n'est inventé : un événement sans adversaire n'en affiche pas. */
 
 const GREEN_BG = '#E9F1EA';
@@ -40,13 +45,19 @@ const pad = (n) => String(n).padStart(2, '0');
 const isoDay = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const locale = (lang) => (lang === 'en' ? 'en-GB' : 'fr-FR');
 
-/** « 17:30 » à partir d'un time Postgres ('17:30:00') ou d'un timestamp. */
+/** « 17:30 » à partir d'un time Postgres ('17:30:00') ou d'un timestamp.
+    Minuit ne s'affiche pas : c'est la marque d'une date sans heure connue,
+    pas d'un rendez-vous à 00:00. */
 function hhmm(value, lang) {
   if (!value) return '';
-  if (typeof value === 'string' && /^\d{2}:\d{2}/.test(value)) return value.slice(0, 5);
-  try {
-    return new Date(value).toLocaleTimeString(locale(lang), { hour: '2-digit', minute: '2-digit' });
-  } catch { return ''; }
+  let out = '';
+  if (typeof value === 'string' && /^\d{2}:\d{2}/.test(value)) out = value.slice(0, 5);
+  else {
+    try {
+      out = new Date(value).toLocaleTimeString(locale(lang), { hour: '2-digit', minute: '2-digit' });
+    } catch { return ''; }
+  }
+  return /^00\s*[:h]\s*00$/.test(out) ? '' : out;
 }
 
 export default function Calendrier() {
@@ -55,6 +66,7 @@ export default function Calendrier() {
   const [ready, setReady] = useState(false);
   const [navRole, setNavRole] = useState('parent');
   const [kids, setKids] = useState([]);
+  const [coachTeams, setCoachTeams] = useState([]);
   const [items, setItems] = useState([]);
   const [cursor, setCursor] = useState(() => {
     const n = new Date();
@@ -63,8 +75,8 @@ export default function Calendrier() {
 
   /* Les items du mois affiché, plus ceux des prochaines semaines pour la liste
      « à venir » : une seule fenêtre, rechargée quand on change de mois. */
-  const loadItems = useCallback(async (children, y, m) => {
-    if (!children.length) { setItems([]); return; }
+  const loadItems = useCallback(async (children, myTeams, y, m) => {
+    if (!children.length && !myTeams.length) { setItems([]); return; }
     const ids = children.map((c) => c.id);
     const teamIds = [...new Set(children.map((c) => c.team_id).filter(Boolean))];
     const byId = new Map(children.map((c) => [c.id, c]));
@@ -76,22 +88,30 @@ export default function Calendrier() {
       new Date(now.getFullYear(), now.getMonth(), now.getDate() + AHEAD_DAYS),
     ));
 
+    const lastMoment = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59);
     const out = [];
+    /* Ce que la vue famille couvre déjà, pour qu'un coach dont l'enfant joue
+       dans son propre groupe ne voie pas deux fois la même séance. */
+    const seen = new Set();
 
     /* Événements : seuls ceux sur lesquels l'enfant est convoqué le concernent. */
-    const { data: convs } = await supabase.from('event_convocations')
-      .select('player_id, response, events(id, type, datetime, place, opponent)')
-      .in('player_id', ids);
-    for (const c of convs || []) {
-      const e = c.events;
-      if (!e?.datetime) continue;
-      const when = new Date(e.datetime);
-      if (when < from || when > new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59)) continue;
-      out.push({
-        key: `e${e.id}-${c.player_id}`, when, day: isoDay(when),
-        kid: byId.get(c.player_id), type: e.type, response: c.response,
-        opponent: e.opponent, at: e.datetime, place: e.place,
-      });
+    if (ids.length) {
+      const { data: convs } = await supabase.from('event_convocations')
+        .select('player_id, response, events(id, type, datetime, place, opponent)')
+        .in('player_id', ids);
+      for (const c of convs || []) {
+        const e = c.events;
+        if (!e?.datetime) continue;
+        const when = new Date(e.datetime);
+        if (when < from || when > lastMoment) continue;
+        seen.add(`e${e.id}`);
+        out.push({
+          key: `e${e.id}-${c.player_id}`, when, day: isoDay(when),
+          who: byId.get(c.player_id)?.first_name, kid: byId.get(c.player_id),
+          type: e.type, response: c.response,
+          opponent: e.opponent, at: e.datetime, place: e.place,
+        });
+      }
     }
 
     /* Séances : l'entraînement du groupe, une fois publié par le club. */
@@ -102,12 +122,48 @@ export default function Calendrier() {
         .not('published_at', 'is', null);
       for (const s of ss || []) {
         for (const kid of children.filter((c) => c.team_id === s.team_id)) {
+          seen.add(`s${s.id}`);
           out.push({
             key: `s${s.id}-${kid.id}`, when: new Date(`${s.date}T${s.start_time || '00:00:00'}`),
-            day: s.date, kid, type: 'seance',
+            day: s.date, who: kid.first_name, kid, type: 'seance',
             theme: s.theme, start: s.start_time, end: s.end_time,
           });
         }
+      }
+    }
+
+    /* Côté coach : ses groupes, séances et événements confondus. Le club n'est
+       rappelé que s'il en encadre plusieurs — sinon le nom du groupe suffit. */
+    if (myTeams.length) {
+      const mine = myTeams.map((tm) => tm.id);
+      const teamById = new Map(myTeams.map((tm) => [tm.id, tm]));
+      const manyClubs = new Set(myTeams.map((tm) => tm.club_id)).size > 1;
+
+      const { data: ss } = await supabase.from('sessions')
+        .select('id, team_id, date, start_time, end_time, theme')
+        .in('team_id', mine).gte('date', isoDay(from)).lte('date', isoDay(to));
+      for (const s of ss || []) {
+        if (seen.has(`s${s.id}`)) continue;
+        const tm = teamById.get(s.team_id);
+        out.push({
+          key: `cs${s.id}`, when: new Date(`${s.date}T${s.start_time || '00:00:00'}`),
+          day: s.date, who: tm?.name, club: manyClubs ? tm?.clubs?.name : null,
+          type: 'seance', theme: s.theme, start: s.start_time, end: s.end_time,
+        });
+      }
+
+      const { data: evs } = await supabase.from('events')
+        .select('id, team_id, type, datetime, place, opponent').in('team_id', mine);
+      for (const e of evs || []) {
+        if (!e.datetime || seen.has(`e${e.id}`)) continue;
+        const when = new Date(e.datetime);
+        if (when < from || when > lastMoment) continue;
+        const tm = teamById.get(e.team_id);
+        out.push({
+          key: `ce${e.id}`, when, day: isoDay(when),
+          who: tm?.name, club: manyClubs ? tm?.clubs?.name : null,
+          type: e.type, opponent: e.opponent, at: e.datetime, place: e.place,
+        });
       }
     }
 
@@ -129,11 +185,26 @@ export default function Calendrier() {
       setNavRole(children.length
         ? (children.every((c) => myIds.includes(c.id)) ? 'athlete' : 'parent')
         : ((ms || []).some((r) => r.role === 'admin' || r.role === 'coach') ? 'coach' : 'parent'));
+
+      /* Groupes encadrés : ceux qu'il entraîne, plus ceux des clubs où il est
+         dirigeant. La RLS ne laisse rien passer des autres clubs. */
+      const { data: ct } = await supabase.from('coach_teams').select('teams(id, name, club_id, clubs(name))');
+      let myTeams = (ct || []).map((r) => r.teams).filter(Boolean);
+      const adminClubs = (ms || []).filter((r) => r.role === 'admin').length
+        ? (await supabase.from('memberships').select('club_id').eq('role', 'admin')).data || []
+        : [];
+      if (adminClubs.length) {
+        const { data: at } = await supabase.from('teams')
+          .select('id, name, club_id, clubs(name)').in('club_id', adminClubs.map((r) => r.club_id));
+        myTeams = myTeams.concat(at || []);
+      }
+      setCoachTeams(Object.values(Object.fromEntries(myTeams.map((tm) => [tm.id, tm]))));
       setReady(true);
     })();
   }, [router]);
 
-  useEffect(() => { loadItems(kids, cursor.y, cursor.m); }, [kids, cursor, loadItems]);
+  useEffect(() => { loadItems(kids, coachTeams, cursor.y, cursor.m); },
+    [kids, coachTeams, cursor, loadItems]);
 
   useEffect(() => { document.title = `${t('cal.title')} · YouPlaySport`; }, [t]);
 
@@ -146,9 +217,12 @@ export default function Calendrier() {
 
   if (!ready) return <div className="wrap"><p style={{ color: 'var(--muted)' }}>{t('common.loading')}</p></div>;
 
-  if (!kids.length) return (
+  /* Un coach sans enfant rattaché a bien un calendrier : celui de ses groupes. */
+  if (!kids.length && !coachTeams.length) return (
     <div className="wrap" style={{ paddingBottom: BOTTOM_NAV_HEIGHT + 24 }}>
-      <div className="card"><p style={{ margin: 0, color: 'var(--muted)' }}>{t('common.noChild')}</p></div>
+      <div className="card"><p style={{ margin: 0, color: 'var(--muted)' }}>
+        {t(navRole === 'coach' ? 'cal.noTeam' : 'common.noChild')}
+      </p></div>
       <BottomNav role={navRole} />
     </div>
   );
@@ -248,7 +322,7 @@ export default function Calendrier() {
 
       {upcoming.map((it) => {
         const tone = TYPE_TONE[it.type] || TONE_PLAIN;
-        const club = it.kid?.teams?.clubs?.name || '';
+        const club = it.kid ? (it.kid.teams?.clubs?.name || '') : (it.club || '');
         const d = new Date(`${it.day}T00:00:00`);
         const typeLabel = it.type === 'seance' ? t('cal.session')
           : EVENT_TYPES.includes(it.type) ? t(`event.${it.type}`) : t('cal.event');
@@ -274,7 +348,7 @@ export default function Calendrier() {
 
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.35 }}>
-                {[it.kid?.first_name, title].filter(Boolean).join(' · ')}
+                {[it.who, title].filter(Boolean).join(' · ')}
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5, marginTop: 3 }}>
                 {[club, detail].filter(Boolean).join(' · ')}
