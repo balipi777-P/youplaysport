@@ -17,7 +17,7 @@ const TABS = {
     { href: '/profil', icon: '👤', key: 'nav.profile' },
     { href: '/calendrier', icon: '📆', key: 'nav.calendar' },
     { href: '/alertes', icon: '🔔', key: 'nav.alerts' },
-    { href: '/onboarding', icon: '➕', key: 'nav.add' },
+    { href: '/ajouter', icon: '➕', key: 'nav.add' },
   ],
   athlete: [
     { href: '/', icon: '⚡', key: 'nav.today' },
