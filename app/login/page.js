@@ -38,25 +38,31 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="wrap">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-        <div className="brand">
-          <div className="logo">Y</div>
-          <div className="q" style={{ fontWeight: 700, fontSize: 18 }}>
-            You<span style={{ color: 'var(--brand)' }}>Play</span>Sport
-          </div>
-        </div>
+    <div className="wrap" style={{ paddingTop: 28 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
         <LangToggle />
       </div>
 
-      <h1 className="q" style={{ fontSize: 26, letterSpacing: '-0.5px', margin: '0 0 6px' }}>
-        {mode === 'login' ? t('login.welcomeBack') : t('login.createAccount')}
-      </h1>
-      <p style={{ color: 'var(--muted)', marginTop: 0, marginBottom: 20 }}>
-        {t('app.tagline')}
-      </p>
+      {/* Bloc marque centré : pastille terracotta, nom, promesse produit. */}
+      <div style={{ textAlign: 'center', marginBottom: 24 }}>
+        <div className="logo" style={{ width: 64, height: 64, borderRadius: 22, margin: '0 auto 14px',
+          fontSize: 30, boxShadow: '0 10px 24px rgba(192, 91, 68, .28)' }}>Y</div>
+        <h1 className="q" style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.6px', margin: '0 0 6px' }}>
+          You<span style={{ color: 'var(--brand)' }}>Play</span>Sport
+        </h1>
+        <p style={{ color: 'var(--muted)', fontSize: 14, lineHeight: 1.5, margin: '0 auto', maxWidth: 300 }}>
+          {t('app.tagline')}
+        </p>
+      </div>
 
-      <form onSubmit={submit} className="card">
+      <form onSubmit={submit} className="card" style={{ padding: 20 }}>
+        {/* En connexion, le bloc marque tient lieu de titre ; en création de
+            compte, on rappelle où l'on se trouve. */}
+        {mode === 'signup' && (
+          <div className="q" style={{ textAlign: 'center', fontWeight: 700, fontSize: 17, marginBottom: 16 }}>
+            {t('login.createAccount')}
+          </div>
+        )}
         {err && <div className="error">{err}</div>}
         {msg && <div className="pill" style={{ marginBottom: 12 }}>{msg}</div>}
         <div className="label" style={{ marginBottom: 6 }}>{t('login.email')}</div>
@@ -64,14 +70,16 @@ export default function LoginPage() {
           onChange={(e) => setEmail(e.target.value)} placeholder="vous@email.com" />
         <div className="label" style={{ marginBottom: 6 }}>{t('login.password')}</div>
         <input className="input" type="password" required minLength={6} value={password}
-          onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
+          onChange={(e) => setPassword(e.target.value)} placeholder="••••••••"
+          style={{ marginBottom: 16 }} />
         <button className="btn" disabled={busy} type="submit">
           {busy ? '…' : mode === 'login' ? t('login.signIn') : t('login.doCreate')}
         </button>
         {mode === 'login' && (
-          <div style={{ textAlign: 'center', marginTop: 10 }}>
-            <a href="#" style={{ fontSize: 13 }} onClick={(e) => { e.preventDefault(); router.push('/mot-de-passe-oublie'); }}>
-              {lang === 'en' ? 'Forgot password?' : 'Mot de passe oublié ?'}
+          <div style={{ textAlign: 'center', marginTop: 14 }}>
+            <a href="#" style={{ fontSize: 13, fontWeight: 600, color: 'var(--brand)' }}
+              onClick={(e) => { e.preventDefault(); router.push('/mot-de-passe-oublie'); }}>
+              {t('login.forgot')}
             </a>
           </div>
         )}
