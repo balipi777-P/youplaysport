@@ -154,7 +154,17 @@ export default function ParentJournal({
                 {initials(c)}
               </span>
               <span>
-                <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700 }}>{c.first_name}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, fontWeight: 700 }}>
+                  {c.first_name}
+                  {/* Rattachement demandé mais pas encore validé par le club. */}
+                  {c.link_status === 'pending' && (
+                    <span style={{ borderRadius: 20, padding: '2px 7px', fontSize: 9.5, fontWeight: 800,
+                      background: on ? 'rgba(255,255,255,.24)' : '#FFF1E3',
+                      color: on ? '#fff' : '#9A5B18' }}>
+                      {t('add.after.pending')}
+                    </span>
+                  )}
+                </span>
                 <span style={{ display: 'block', fontSize: 9.5, fontWeight: 800, letterSpacing: '.5px',
                   textTransform: 'uppercase', opacity: .85, marginTop: 2 }}>
                   {[c.teams?.clubs?.name, sportName(sp)].filter(Boolean).join(' · ')}

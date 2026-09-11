@@ -234,7 +234,7 @@ export default function Club() {
 
     // Rattachements parents : lisibles par le dirigeant (can_manage_player).
     const { data: lk } = await supabase.from('player_parents')
-      .select('player_id, parent_user_id').in('player_id', pids);
+      .select('player_id, parent_user_id, status').in('player_id', pids);
     const links = lk || [];
 
     // Séances publiées de chaque équipe = dénominateur des présences.
@@ -261,13 +261,18 @@ export default function Club() {
 
     return roster.map((p) => {
       const mine = links.filter((l) => l.player_id === p.id);
+      /* « À valider » n'est plus une déduction : un rattachement demandé par un
+         parent reste en attente jusqu'à ce que le club le valide. Un licencié
+         n'est actif que si au moins un de ses liens l'est — ou s'il a son
+         propre compte, qui ne passe par aucun rattachement. */
+      const anyActive = mine.some((l) => (l.status || 'active') === 'active');
       return {
         id: p.id,
         teamId: p.team_id,
         name: `${p.first_name} ${p.last_name || ''}`.trim(),
         parents: mine.map((l) => names[l.parent_user_id] || ''),
         ownAccount: Boolean(p.user_id),
-        linked: mine.length > 0 || Boolean(p.user_id),
+        linked: anyActive || Boolean(p.user_id),
         presents: presents[p.id] || 0,
         total: held[p.team_id] || 0,
       };

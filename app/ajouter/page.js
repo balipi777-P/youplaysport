@@ -9,20 +9,21 @@ import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 
 /* Ajouter un enfant · rejoindre un club.
 
-   Ce que l'écran sait vraiment : le compte connecté (email, nom) et les enfants
-   déjà rattachés, avec leurs clubs — donc les blocs « après rattachement »,
-   « qui voit quoi » et « vos clubs » sont entièrement nourris par la base.
+   Tout vient de la base : le compte connecté, les enfants déjà rattachés avec
+   leurs clubs, et — depuis le câblage — le club derrière un code.
 
-   Ce qu'il ne peut pas savoir encore : le club derrière un code. La RLS ferme
-   yps.clubs et yps.teams à qui n'en est pas déjà membre, et pending_links est
-   réservé aux administrateurs du club. Un parent ne peut donc pas résoudre un
-   code en nom de club, ni lister les groupes proposés, tant qu'une fonction
-   dédiée n'existe pas. Ces éléments viennent du lien d'invitation lui-même
-   (ses paramètres d'URL) et les blocs concernés restent masqués sans lui —
-   plutôt que d'afficher un club qui n'existe nulle part.
+   La RLS ferme yps.clubs et yps.teams à qui n'en est pas déjà membre. Deux
+   fonctions security definer ouvrent juste ce qu'il faut, sans plus :
+    - club_by_code() rend le nom du club et ses groupes à qui connaît le code,
+      qui est le secret que le club distribue lui-même ;
+    - request_child_link() crée la fiche du licencié et son rattachement, en
+      « pending » tant que le club ne l'a pas validé.
 
-   La vérification du code et le rattachement ne sont pas câblés : les actions
-   affichent une note. */
+   Aucun compte n'est créé ici : le parent est déjà connecté, et l'enfant est
+   une fiche rattachée à son compte, pas un second compte.
+
+   Le sport n'est jamais choisi par le parent — il découle du groupe, qui
+   découle du club. */
 
 /* Bleu du lien d'invitation, vert du compte détecté, et les deux boutons pleins. */
 const BLUE = { bg: '#E8EFF7', line: '#D2E0EF', ink: '#2B4B6F' };
@@ -49,14 +50,24 @@ export default function AjouterEnfant() {
 
   const [code, setCode] = useState('');
   const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [birth, setBirth] = useState('');
-  const [group, setGroup] = useState('');
+  const [teamId, setTeamId] = useState('');
   const [consent, setConsent] = useState(false);
   const [notice, setNotice] = useState('');
 
+  /** Club résolu par club_by_code() : {club_id, club_name, teams[]}. */
+  const [found, setFound] = useState(null);
+  const [codeErr, setCodeErr] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sendErr, setSendErr] = useState('');
+  /** Demande partie : {club_name, child} — l'écran passe en confirmation. */
+  const [sent, setSent] = useState(null);
+
   /**
-   * Invitation reconnue. Rien en base ne la résout aujourd'hui : elle est lue
-   * dans les paramètres du lien (club, sport, catégorie, groupes proposés).
+   * Invitation reconnue. Elle ne sert qu'à pré-remplir le code : le nom du club
+   * et ses groupes viennent ensuite de la base, jamais de l'URL.
    */
   const [invite, setInvite] = useState(null);
 
@@ -64,16 +75,9 @@ export default function AjouterEnfant() {
     try {
       const q = new URLSearchParams(window.location.search);
       if (!q.get('invite')) return;
-      const groups = (q.get('groupes') || '').split(',').map((s) => s.trim()).filter(Boolean);
-      const category = q.get('categorie') || '';
-      setInvite({
-        club: q.get('club') || '',
-        sport: q.get('sport') || '',
-        category,
-        groups: groups.length ? groups : (category ? [category] : []),
-      });
-      if (groups.length) setGroup(groups[0]);
-      else if (category) setGroup(category);
+      const c = (q.get('code') || q.get('invite') || '').toUpperCase().trim();
+      setInvite({ code: c });
+      if (c && c !== '1') setCode(c.slice(0, CODE_MAX));
     } catch { /* pas d'URL exploitable */ }
   }, []);
 
@@ -94,15 +98,76 @@ export default function AjouterEnfant() {
 
   useEffect(() => { document.title = `${t('add.title')} · YouPlaySport`; }, [t]);
 
-  /* Partie visuelle : la vérification du code et le rattachement viendront au câblage. */
-  function comingSoon() { setNotice(t('add.soon')); }
+  /**
+   * Vérifie le code auprès de club_by_code(). La fonction rend null quand aucun
+   * club ne porte ce code : on le dit, et on n'affiche rien de plus.
+   */
+  async function checkCode() {
+    const c = code.trim();
+    setNotice(''); setSendErr(''); setCodeErr(''); setFound(null); setTeamId('');
+    if (!c) { setCodeErr(t('add.code.unknown')); return; }
+    setChecking(true);
+    const { data, error } = await supabase.rpc('club_by_code', { p_code: c });
+    setChecking(false);
+    if (error) {
+      if (`${error.message}`.includes('not_authenticated')) { router.replace('/login'); return; }
+      setCodeErr(t('add.code.failed'));
+      return;
+    }
+    if (!data) { setCodeErr(t('add.code.unknown')); return; }
+    setFound(data);
+    /* Un seul groupe proposé : le choix est déjà fait. */
+    const list = data.teams || [];
+    if (list.length === 1) setTeamId(list[0].id);
+  }
+
+  /** Traduit l'erreur Postgres en phrase, et renvoie au login si la session a expiré. */
+  function linkError(message) {
+    const m = `${message || ''}`;
+    if (m.includes('not_authenticated')) { router.replace('/login'); return ''; }
+    if (m.includes('club_not_found')) return t('add.err.clubNotFound');
+    if (m.includes('consent_required')) return t('add.err.consent');
+    if (m.includes('team_mismatch')) return t('add.err.teamMismatch');
+    if (m.includes('first_name_required')) return t('add.err.firstName');
+    return t('add.err.generic');
+  }
+
+  async function submitRequest() {
+    if (!canSubmit || sending) return;
+    setSending(true); setSendErr(''); setNotice('');
+    const { data, error } = await supabase.rpc('request_child_link', {
+      p_code: code.trim(),
+      p_first: firstName.trim(),
+      p_last: lastName.trim(),
+      p_birthdate: birth,
+      p_team: teamId || null,
+      p_consent: true,
+    });
+    setSending(false);
+    if (error) { setSendErr(linkError(error.message)); return; }
+    setSent({ club: data?.club_name || found?.club_name || '', child: firstName.trim() });
+    /* La fiche existe désormais : la liste du compte la reprend, en « à valider ». */
+    setChildren(await loadMyChildren());
+  }
 
   if (!ready) return <div className="wrap"><p style={{ color: 'var(--muted)' }}>{t('common.loading')}</p></div>;
 
   const sportName = (sp) => (lang === 'en' ? sp?.name_en || sp?.name_fr : sp?.name_fr) || '';
   const parentName = fullName || email;
-  const clubName = invite?.club || '';
+  const clubName = found?.club_name || '';
   const childName = firstName.trim();
+  const groups = found?.teams || [];
+
+  /** Libellé d'un groupe : son nom, sinon sa catégorie et son sport. */
+  const groupLabel = (g) => g.name
+    || [g.category, lang === 'en' ? g.sport_en || g.sport_fr : g.sport_fr].filter(Boolean).join(' · ')
+    || t('add.group.untitled');
+
+  /* Le bouton n'est actif que si la demande a tout ce qu'il lui faut : un club
+     vérifié, un prénom, une date de naissance, le consentement — et un groupe
+     dès lors que le club en propose. */
+  const canSubmit = Boolean(found) && childName !== '' && birth !== '' && consent
+    && (groups.length === 0 || teamId !== '');
 
   /* Un club par nom, avec l'enfant qui y est licencié : la même famille peut avoir
      deux enfants dans deux clubs, et c'est cette liste-là qui n'appartient qu'au parent. */
@@ -160,15 +225,16 @@ export default function AjouterEnfant() {
               <div className="label" style={{ color: BLUE.ink, marginBottom: 2 }}>
                 {t('add.invite.label')}
               </div>
+              {/* Le lien ne porte qu'un code. Le nom du club, lui, vient de la
+                  base — tant que le code n'est pas vérifié, on ne l'annonce pas. */}
               <div className="q" style={{ fontWeight: 700, fontSize: 15 }}>
-                {invite.club || t('add.invite.unknownClub')}
+                {clubName || t('add.invite.unknownClub')}
               </div>
-              {(invite.sport || invite.category) && (
-                <div style={{ fontSize: 12, color: BLUE.ink, marginTop: 2 }}>
-                  {[invite.sport, invite.category && t('add.invite.groupOf', { category: invite.category })]
-                    .filter(Boolean).join(' · ')}
-                </div>
-              )}
+              <div style={{ fontSize: 12, color: BLUE.ink, marginTop: 2 }}>
+                {clubName
+                  ? t(groups.length === 1 ? 'add.group.countOne' : 'add.group.countMany', { n: groups.length })
+                  : t('add.invite.toCheck')}
+              </div>
             </div>
           </div>
         </div>
@@ -197,14 +263,16 @@ export default function AjouterEnfant() {
             clubs.length ? t('add.detected.beside', { clubs: clubs.map((c) => c.name).join(', ') }) : '',
           ].filter(Boolean).join(' ')}
         </p>
-        <button type="button" onClick={comingSoon}
+        <button type="button" onClick={() => document.getElementById('add-code')?.focus()}
           style={{ display: 'block', width: '100%', marginTop: 14, background: TEAL_BTN, color: '#fff',
             border: 'none', borderRadius: 14, padding: 13, fontWeight: 700, fontSize: 14.5,
             fontFamily: 'inherit', cursor: 'pointer' }}>
           {t('add.detected.cta')}
         </button>
         <div style={{ textAlign: 'center', marginTop: 10 }}>
-          <a href="#" onClick={(e) => { e.preventDefault(); comingSoon(); }}
+          {/* Se déconnecter est la seule façon honnête de « ce n'est pas moi » :
+              cet écran ne crée aucun compte. */}
+          <a href="#" onClick={async (e) => { e.preventDefault(); await supabase.auth.signOut(); router.replace('/login'); }}
             style={{ fontSize: 12.5, fontWeight: 700, color: GREEN.ink }}>
             {t('add.detected.notMine')}
           </a>
@@ -218,14 +286,36 @@ export default function AjouterEnfant() {
         </div>
         {sectionLabel(t('add.code.label'))}
         <div style={{ display: 'flex', gap: 8 }}>
-          <input className="input" value={code} maxLength={CODE_MAX}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
+          <input className="input" id="add-code" value={code} maxLength={CODE_MAX}
+            onChange={(e) => { setCode(e.target.value.toUpperCase()); setFound(null); setCodeErr(''); setTeamId(''); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') checkCode(); }}
             placeholder="V0L-7K2Q" style={{ flex: 1, marginBottom: 0, letterSpacing: 2, fontWeight: 700 }} />
-          <button type="button" onClick={comingSoon} className="btn ghost"
-            style={{ width: 'auto', flexShrink: 0, padding: '13px 16px', fontSize: 14 }}>
-            {t('add.code.check')}
+          <button type="button" onClick={checkCode} className="btn ghost" disabled={checking}
+            style={{ width: 'auto', flexShrink: 0, padding: '13px 16px', fontSize: 14,
+              opacity: checking ? 0.6 : 1 }}>
+            {checking ? t('add.code.checking') : t('add.code.check')}
           </button>
         </div>
+
+        {codeErr && <div className="error" style={{ marginTop: 10 }}>{codeErr}</div>}
+
+        {found && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12,
+            background: GREEN.bg, border: `1px solid ${GREEN.line}`, borderRadius: 14, padding: '10px 12px' }}>
+            <span className="q" style={{ width: 34, height: 34, flex: '0 0 34px', borderRadius: 11,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800,
+              color: '#fff', background: found.accent_color || GREEN.ink }}>
+              {initials(found.club_name)}
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700 }}>{found.club_name}</div>
+              <div style={{ fontSize: 11.5, color: GREEN.ink }}>
+                {t(groups.length === 1 ? 'add.group.countOne' : 'add.group.countMany', { n: groups.length })}
+              </div>
+            </div>
+          </div>
+        )}
+
         <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5, margin: '10px 0 0' }}>
           {t('add.code.hint')}
         </p>
@@ -238,32 +328,40 @@ export default function AjouterEnfant() {
         </div>
         {sectionLabel(t('add.child.first'))}
         <input className="input" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+        {sectionLabel(t('add.child.last'))}
+        <input className="input" value={lastName} onChange={(e) => setLastName(e.target.value)} />
         {sectionLabel(t('add.child.birth'))}
         <input className="input" type="date" value={birth} onChange={(e) => setBirth(e.target.value)}
           style={{ marginBottom: 0 }} />
       </div>
 
-      {/* ---- 5. Groupes proposés : seuls ceux que le lien d'invitation annonce ---- */}
-      {invite?.groups?.length > 0 && (
+      {/* ---- 5. Groupes du club, tels que la base les connaît. Le sport en
+               découle : il n'est jamais choisi par le parent. ---- */}
+      {found && groups.length > 0 && (
         <div className="card">
-          {sectionLabel(clubName
-            ? t('add.group.byClub', { club: clubName })
-            : t('add.group.title'))}
+          {sectionLabel(t('add.group.byClub', { club: clubName }))}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {invite.groups.map((g) => {
-              const on = group === g;
+            {groups.map((g) => {
+              const on = teamId === g.id;
               return (
-                <button key={g} type="button" onClick={() => setGroup(g)}
+                <button key={g.id} type="button" onClick={() => setTeamId(g.id)}
                   aria-pressed={on ? 'true' : 'false'}
                   style={{ border: `1px solid ${on ? 'var(--brand)' : 'var(--border)'}`, borderRadius: 20,
                     padding: '8px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                    fontFamily: 'inherit',
+                    fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6,
                     background: on ? 'var(--peach)' : '#fff', color: on ? 'var(--brand-dark)' : 'var(--ink)' }}>
-                  {g}
+                  {g.sport_icon && <span aria-hidden="true">{g.sport_icon}</span>}
+                  {groupLabel(g)}
                 </button>
               );
             })}
           </div>
+        </div>
+      )}
+
+      {found && groups.length === 0 && (
+        <div className="card" style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6 }}>
+          {t('add.group.none', { club: clubName })}
         </div>
       )}
 
@@ -280,16 +378,41 @@ export default function AjouterEnfant() {
       </label>
 
       {notice && <div className="pill" style={{ marginBottom: 12 }}>{notice}</div>}
+      {sendErr && <div className="error" style={{ marginBottom: 12 }}>{sendErr}</div>}
 
-      <button type="button" onClick={comingSoon}
-        style={{ display: 'block', width: '100%', background: GREEN_BTN, color: '#fff', border: 'none',
-          borderRadius: 14, padding: 14, fontWeight: 700, fontSize: 15, fontFamily: 'inherit',
-          cursor: 'pointer' }}>
-        {t('add.submitRequest')}
-      </button>
-      <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5, margin: '10px 0 22px', textAlign: 'center' }}>
-        {t('add.stayNote', { email })}
-      </p>
+      {sent ? (
+        /* Demande partie : plus de bouton, mais ce que le club doit faire ensuite. */
+        <div className="card" style={{ background: GREEN.bg, border: `1px solid ${GREEN.line}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ background: '#fff', color: GREEN.ink, border: `1px solid ${GREEN.line}`,
+              borderRadius: 20, padding: '5px 11px', fontSize: 11.5, fontWeight: 800 }}>
+              {t('add.sent.badge')}
+            </span>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: GREEN.ink }}>
+              {t('add.sent.byClub', { club: sent.club })}
+            </span>
+          </div>
+          <div className="q" style={{ fontWeight: 700, fontSize: 15, margin: '12px 0 6px' }}>
+            {t('add.sent.title', { child: sent.child })}
+          </div>
+          <p style={{ fontSize: 12.5, color: '#4A5A4E', lineHeight: 1.6, margin: 0 }}>
+            {t('add.sent.noAccount')}
+          </p>
+        </div>
+      ) : (
+        <>
+          <button type="button" onClick={submitRequest} disabled={!canSubmit || sending}
+            style={{ display: 'block', width: '100%', background: GREEN_BTN, color: '#fff', border: 'none',
+              borderRadius: 14, padding: 14, fontWeight: 700, fontSize: 15, fontFamily: 'inherit',
+              opacity: !canSubmit || sending ? 0.45 : 1,
+              cursor: !canSubmit || sending ? 'not-allowed' : 'pointer' }}>
+            {sending ? t('add.sending') : t('add.submitRequest')}
+          </button>
+          <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5, margin: '10px 0 22px', textAlign: 'center' }}>
+            {t('add.stayNote', { email })}
+          </p>
+        </>
+      )}
 
       {/* ---- 7. Votre compte après rattachement ---- */}
       <div className="card">
@@ -314,34 +437,42 @@ export default function AjouterEnfant() {
           </div>
         </div>
 
-        {children.map((c) => (
-          <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            gap: 10, borderTop: '1px solid var(--border)', padding: '11px 0 0', marginTop: 11 }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{c.first_name}</div>
-              <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                {[c.teams?.clubs?.name, c.teams?.category].filter(Boolean).join(' · ')}
+        {children.map((c) => {
+          /* Le rattachement demandé par le parent reste à valider par le club :
+             c'est player_parents.status qui le dit, pas une supposition. */
+          const pending = c.link_status === 'pending';
+          return (
+            <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: 10, borderTop: '1px solid var(--border)', padding: '11px 0 0', marginTop: 11 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{c.first_name}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                  {[c.teams?.clubs?.name, c.teams?.category].filter(Boolean).join(' · ')}
+                </div>
               </div>
+              <span style={{ flex: '0 0 auto', borderRadius: 20, padding: '4px 10px',
+                fontSize: 11, fontWeight: 800,
+                background: pending ? '#FFF1E3' : GREEN.bg,
+                color: pending ? '#9A5B18' : GREEN.ink,
+                border: `1px solid ${pending ? '#F1DCC2' : GREEN.line}` }}>
+                {t(pending ? 'add.after.pending' : 'add.after.linked')}
+              </span>
             </div>
-            <span style={{ flex: '0 0 auto', background: GREEN.bg, color: GREEN.ink,
-              border: `1px solid ${GREEN.line}`, borderRadius: 20, padding: '4px 10px',
-              fontSize: 11, fontWeight: 800 }}>
-              {t('add.after.linked')}
-            </span>
-          </div>
-        ))}
+          );
+        })}
 
-        {/* L'enfant en cours de saisie, tant qu'il n'est qu'une intention. */}
-        {childName && (
+        {/* L'enfant en cours de saisie, tant qu'il n'est qu'une intention. Une
+            fois la demande partie, il figure dans la liste ci-dessus. */}
+        {childName && !sent && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             gap: 10, borderTop: '1px solid var(--border)', padding: '11px 0 0', marginTop: 11 }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 700 }}>{childName}</div>
-              {(clubName || group) && (
-                <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                  {[clubName, group].filter(Boolean).join(' · ')}
-                </div>
-              )}
+              {(() => {
+                const g = groups.find((x) => x.id === teamId);
+                const line = [clubName, g ? groupLabel(g) : ''].filter(Boolean).join(' · ');
+                return line ? <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{line}</div> : null;
+              })()}
             </div>
             <span style={{ flex: '0 0 auto', background: 'var(--peach)', color: 'var(--brand-dark)',
               border: '1px solid #EBD3C9', borderRadius: 20, padding: '4px 10px',

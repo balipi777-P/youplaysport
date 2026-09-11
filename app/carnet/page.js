@@ -81,8 +81,16 @@ export default function Carnet() {
               <button key={c.id} type="button" onClick={() => switchChild(c.id)}
                 style={{ border: 'none', borderRadius: 18, padding: '7px 13px', fontSize: 13, fontWeight: 700,
                   cursor: 'pointer', fontFamily: 'inherit',
-                  background: on ? 'var(--brand)' : '#F1E9E1', color: on ? '#fff' : '#57534A' }}>
+                  background: on ? 'var(--brand)' : '#F1E9E1', color: on ? '#fff' : '#57534A',
+                  display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 {c.first_name}
+                {/* Rattachement demandé, pas encore validé par le club. */}
+                {c.link_status === 'pending' && (
+                  <span style={{ borderRadius: 20, padding: '2px 7px', fontSize: 9.5, fontWeight: 800,
+                    background: on ? 'rgba(255,255,255,.24)' : '#FFF1E3', color: on ? '#fff' : '#9A5B18' }}>
+                    {t('add.after.pending')}
+                  </span>
+                )}
               </button>
             );
           })}
