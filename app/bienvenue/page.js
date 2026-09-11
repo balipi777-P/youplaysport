@@ -1,175 +1,132 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useT, LangToggle } from '../../lib/i18n';
 
-const COPY = {
-  fr: {
-    tagline: 'La journée sportive de votre enfant, au même endroit.',
-    heroTitle: 'Le lien positif entre le club et les familles',
-    heroSub: 'YouPlaySport rassemble séances, présences, compétences et convocations dans une seule app claire, bienveillante et multisport. Que du positif.',
-    ctaCreate: 'Créer mon club',
-    ctaJoin: 'Rejoindre un club',
-    login: 'Se connecter',
-    featuresTitle: 'Tout ce qui compte, au même endroit',
-    features: [
-      { icon: '📓', t: 'Journal de la journée', d: 'Après chaque séance, la famille voit le thème, les axes travaillés et un mot du coach.' },
-      { icon: '🌟', t: 'Carnet de compétences', d: 'Les progrès de l’enfant, validés par le coach, rangés par axe — que du positif.' },
-      { icon: '✅', t: 'Présences', d: 'Le coach pointe présents, retards et absents en un geste ; les familles suivent.' },
-      { icon: '📣', t: 'Convocations', d: 'Matchs, tournois, sorties : les familles répondent présent ou absent en un clic.' },
-      { icon: '📆', t: 'Calendrier', d: 'Un mois d’un coup d’œil : présences et événements réunis pour chaque enfant.' },
-      { icon: '🏆', t: 'Multisport', d: 'Football, basket, judo, danse… 6 axes universels adaptés à tous les sports.' },
-    ],
-    forWhoTitle: 'Pensé pour chacun',
-    forWho: [
-      { r: 'Dirigeants', d: 'Créez le club, ses équipes et invitez coachs et familles avec un simple code.' },
-      { r: 'Coachs', d: 'Publiez une séance en 2 minutes, valorisez chaque enfant.' },
-      { r: 'Parents', d: 'Suivez la pratique de vos enfants, même avec plusieurs enfants dans le club.' },
-    ],
-    pricingTitle: 'Des forfaits simples',
-    pricingSub: '14 jours d’essai gratuit. Sans engagement. Données hébergées en Europe (RGPD).',
-    perMonth: '/ mois',
-    upTo: 'jusqu’à {n} licenciés',
-    choose: 'Commencer l’essai',
-    rgpd: 'Vos données et celles de vos enfants sont hébergées en Europe et protégées conformément au RGPD.',
-    footerSteps: 'Premiers pas',
-    footerPrivacy: 'Confidentialité',
-    footerTerms: 'Conditions d’utilisation',
-    footerDelete: 'Supprimer mon compte',
-  },
-  en: {
-    tagline: 'Your child’s sports day, all in one place.',
-    heroTitle: 'The positive link between the club and families',
-    heroSub: 'YouPlaySport brings sessions, attendance, skills and call-ups together in one clear, caring, multi-sport app. Only positive.',
-    ctaCreate: 'Create my club',
-    ctaJoin: 'Join a club',
-    login: 'Sign in',
-    featuresTitle: 'Everything that matters, in one place',
-    features: [
-      { icon: '📓', t: 'Daily journal', d: 'After each session, families see the theme, the areas worked on and a word from the coach.' },
-      { icon: '🌟', t: 'Skills logbook', d: 'The child’s progress, validated by the coach, sorted by area — only positive.' },
-      { icon: '✅', t: 'Attendance', d: 'The coach marks present, late and absent in one tap; families follow along.' },
-      { icon: '📣', t: 'Call-ups', d: 'Matches, tournaments, outings: families reply present or absent in one click.' },
-      { icon: '📆', t: 'Calendar', d: 'A month at a glance: attendance and events together for each child.' },
-      { icon: '🏆', t: 'Multi-sport', d: 'Football, basketball, judo, dance… 6 universal areas fit every sport.' },
-    ],
-    forWhoTitle: 'Made for everyone',
-    forWho: [
-      { r: 'Directors', d: 'Create the club, its teams, and invite coaches and families with a simple code.' },
-      { r: 'Coaches', d: 'Publish a session in 2 minutes, celebrate every child.' },
-      { r: 'Parents', d: 'Follow your children’s activity, even with several children in the club.' },
-    ],
-    pricingTitle: 'Simple plans',
-    pricingSub: '14-day free trial. No commitment. Data hosted in Europe (GDPR).',
-    perMonth: '/ month',
-    upTo: 'up to {n} members',
-    choose: 'Start the trial',
-    rgpd: 'Your data and your children’s data are hosted in Europe and protected in accordance with GDPR.',
-    footerSteps: 'First steps',
-    footerPrivacy: 'Privacy',
-    footerTerms: 'Terms of use',
-    footerDelete: 'Delete my account',
-  },
-};
+/**
+ * Chiffres annoncés dans le héros. Ils doivent rester vérifiables :
+ *   SPORTS       = nombre de lignes de yps.sports (11 au 11/09/2026) ;
+ *   LANGS        = langues réellement servies par lib/i18n.js (fr, en) ;
+ *   TRIAL_DAYS   = durée d'essai posée par yps.create_club() (60 jours).
+ * Ne pas les gonfler : la page publique est la première promesse faite au club.
+ */
+const SPORTS_COUNT = 11;
+const LANGS_COUNT = 2;
+const TRIAL_DAYS = 60;
 
-const PLANS = [
-  { key: 'petit', name: 'Petit club', price: 29, max: 60 },
-  { key: 'club', name: 'Club', price: 49, max: 150, featured: true },
-  { key: 'club_plus', name: 'Club +', price: 89, max: 400 },
-  { key: 'grand', name: 'Grand Club', price: 149, max: 2000 },
-];
+const ROLES = ['parent', 'athlete', 'coach', 'club'];
+const CHIPS = ['trial', 'nocard', 'fixed', 'eu'];
 
 export default function Bienvenue() {
   const router = useRouter();
-  const { lang } = useT();
-  const c = COPY[lang] || COPY.fr;
+  const { t } = useT();
+
+  useEffect(() => { document.title = `${t('land.tab')} · YouPlaySport`; }, [t]);
 
   return (
-    <div>
-      <div className="wrap" style={{ maxWidth: 900 }}>
-        {/* En-tête */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 30 }}>
-          <div className="brand">
-            <div className="logo">Y</div>
-            <div className="q" style={{ fontWeight: 700, fontSize: 18 }}>
-              You<span style={{ color: 'var(--brand)' }}>Play</span>Sport
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <LangToggle />
-            <a href="#" onClick={(e) => { e.preventDefault(); router.push('/login'); }} style={{ fontSize: 13, fontWeight: 700 }}>{c.login}</a>
-          </div>
-        </div>
+    <div className="pub">
+      <style>{`
+        .pub { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+        .pub-hero { display: grid; grid-template-columns: 1fr; gap: 26px; align-items: center; }
+        @media (min-width: 860px) { .pub-hero { grid-template-columns: 1.1fr 1fr; gap: 40px; } }
+        .pub-roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(225px, 1fr)); gap: 14px; }
+      `}</style>
 
-        {/* Hero */}
-        <div style={{ textAlign: 'center', padding: '10px 0 30px' }}>
-          <div className="pill" style={{ marginBottom: 14 }}>⚽ 🏀 🥋 💃 · Multisport</div>
-          <h1 className="q" style={{ fontSize: 34, lineHeight: 1.15, letterSpacing: '-0.6px', margin: '0 0 14px' }}>{c.heroTitle}</h1>
-          <p style={{ fontSize: 16, color: '#5A554B', lineHeight: 1.55, maxWidth: 620, margin: '0 auto 22px' }}>{c.heroSub}</p>
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button className="btn" style={{ width: 'auto', padding: '14px 22px' }} onClick={() => router.push('/login')}>{c.ctaCreate}</button>
-            <button className="btn ghost" style={{ width: 'auto', padding: '14px 22px' }} onClick={() => router.push('/login')}>{c.ctaJoin}</button>
+      {/* En-tête public : marque, langue, accès au compte. */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 30 }}>
+        <div className="brand">
+          <div className="logo">Y</div>
+          <div className="q" style={{ fontWeight: 700, fontSize: 18 }}>
+            You<span style={{ color: 'var(--brand)' }}>Play</span>Sport
           </div>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <LangToggle />
+          <a href="#" onClick={(e) => { e.preventDefault(); router.push('/login'); }}
+            style={{ fontSize: 13, fontWeight: 700 }}>{t('login.signIn')}</a>
+        </div>
+      </div>
 
-        {/* Fonctionnalités */}
-        <h2 className="q" style={{ fontSize: 22, textAlign: 'center', margin: '20px 0 18px' }}>{c.featuresTitle}</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginBottom: 34 }}>
-          {c.features.map((f, i) => (
-            <div key={i} className="card" style={{ marginBottom: 0 }}>
-              <div style={{ fontSize: 26, marginBottom: 6 }}>{f.icon}</div>
-              <div className="q" style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>{f.t}</div>
-              <div style={{ fontSize: 13, color: '#5A554B', lineHeight: 1.5 }}>{f.d}</div>
+      <div className="pub-hero">
+        {/* Colonne de gauche : la promesse, puis les trois portes d'entrée. */}
+        <div>
+          <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase',
+            color: 'var(--brand)', marginBottom: 12 }}>
+            {t('land.eyebrow')}
+          </div>
+          <h1 className="q" style={{ fontSize: 34, lineHeight: 1.15, letterSpacing: '-0.8px', margin: '0 0 14px' }}>
+            {t('land.h1')}
+          </h1>
+          <p style={{ fontSize: 15.5, color: '#5A554B', lineHeight: 1.6, margin: '0 0 22px' }}>
+            {t('land.lead')}
+          </p>
+
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+            <button type="button" className="btn" style={{ width: 'auto', padding: '13px 20px', marginBottom: 0 }}
+              onClick={() => router.push('/login')}>{t('land.cta.create')}</button>
+            <button type="button" className="btn ghost" style={{ width: 'auto', padding: '13px 20px', marginBottom: 0 }}
+              onClick={() => router.push('/login')}>{t('land.cta.join')}</button>
+            <button type="button" className="btn ghost" style={{ width: 'auto', padding: '13px 20px', marginBottom: 0 }}
+              onClick={() => router.push('/forfaits')}>{t('land.cta.plans')}</button>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {CHIPS.map((c) => (
+              <span key={c} className="pill" style={{ fontSize: 12 }}>
+                {c === 'trial' ? t('land.chip.trial', { n: TRIAL_DAYS }) : t(`land.chip.${c}`)}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Colonne de droite : emplacement de l'illustration, encore à produire. */}
+        <div>
+          <div aria-hidden="true" style={{
+            borderRadius: 18, border: '1px solid var(--border)', minHeight: 260,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, textAlign: 'center',
+            background: 'repeating-linear-gradient(45deg, #EFEBE4 0 10px, #E6E1D8 10px 20px)',
+          }}>
+            <span style={{ fontSize: 12.5, color: '#7A7466', fontWeight: 600, lineHeight: 1.5 }}>
+              {t('land.illus')}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 18, flexWrap: 'wrap', marginTop: 14,
+            fontSize: 12, fontWeight: 800, letterSpacing: '.6px', textTransform: 'uppercase', color: 'var(--brand-dark)' }}>
+            <span>{t('land.stat.sports', { n: SPORTS_COUNT })}</span>
+            <span style={{ color: 'var(--muted)' }}>·</span>
+            <span>{t('land.stat.langs', { n: LANGS_COUNT })}</span>
+            <span style={{ color: 'var(--muted)' }}>·</span>
+            <span>{t('land.stat.ranking')}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Ce que chacun trouve en ouvrant l'app. */}
+      <div className="pub-roles" style={{ marginTop: 44 }}>
+        {ROLES.map((r) => (
+          <div key={r} className="card" style={{ marginBottom: 0 }}>
+            <span className="pill" style={{ marginBottom: 12 }}>{t(`land.role.${r}.badge`)}</span>
+            <div className="q" style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.3, margin: '2px 0 6px' }}>
+              {t(`land.role.${r}.t`)}
             </div>
-          ))}
-        </div>
+            <div style={{ fontSize: 13, color: '#5A554B', lineHeight: 1.55 }}>{t(`land.role.${r}.d`)}</div>
+          </div>
+        ))}
+      </div>
 
-        {/* Pour qui */}
-        <h2 className="q" style={{ fontSize: 22, textAlign: 'center', margin: '10px 0 18px' }}>{c.forWhoTitle}</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginBottom: 34 }}>
-          {c.forWho.map((f, i) => (
-            <div key={i} className="card" style={{ marginBottom: 0, background: 'var(--peach)', border: 'none' }}>
-              <div className="q" style={{ fontWeight: 800, fontSize: 16, color: '#5F2A1C', marginBottom: 4 }}>{f.r}</div>
-              <div style={{ fontSize: 13, color: '#7A4030', lineHeight: 1.5 }}>{f.d}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Tarifs */}
-        <h2 className="q" style={{ fontSize: 22, textAlign: 'center', margin: '10px 0 6px' }}>{c.pricingTitle}</h2>
-        <p style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center', margin: '0 0 18px' }}>{c.pricingSub}</p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 30 }}>
-          {PLANS.map((p) => (
-            <div key={p.key} className="card" style={{
-              marginBottom: 0, textAlign: 'center',
-              border: p.featured ? '2px solid var(--brand)' : '1px solid var(--border)',
-            }}>
-              <div className="q" style={{ fontWeight: 800, fontSize: 17 }}>{p.name}</div>
-              <div style={{ margin: '8px 0 2px' }}>
-                <span className="q" style={{ fontSize: 30, fontWeight: 800, color: 'var(--brand-dark)' }}>{p.price} €</span>
-                <span style={{ fontSize: 12, color: 'var(--muted)' }}> {c.perMonth}</span>
-              </div>
-              <div style={{ fontSize: 12, color: '#5A554B', marginBottom: 12 }}>{c.upTo.replace('{n}', p.max)}</div>
-              <button className={p.featured ? 'btn' : 'btn ghost'} style={{ marginBottom: 0 }} onClick={() => router.push('/login')}>{c.choose}</button>
-            </div>
-          ))}
-        </div>
-
-        {/* RGPD */}
-        <div className="card" style={{ background: '#F4F6F2', border: '1px solid #E3EADD', textAlign: 'center' }}>
-          <div style={{ fontSize: 13, color: '#3E5A3E', lineHeight: 1.5 }}>🇪🇺 {c.rgpd}</div>
-        </div>
-
-        {/* Footer */}
-        <div style={{ borderTop: '1px solid var(--border)', marginTop: 20, paddingTop: 18, display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center', fontSize: 13 }}>
-          <a href="#" onClick={(e) => { e.preventDefault(); router.push('/premiers-pas'); }}>{c.footerSteps}</a>
-          <a href="#" onClick={(e) => { e.preventDefault(); router.push('/confidentialite'); }}>{c.footerPrivacy}</a>
-          <a href="#" onClick={(e) => { e.preventDefault(); router.push('/cgu'); }}>{c.footerTerms}</a>
-          <a href="#" onClick={(e) => { e.preventDefault(); router.push('/suppression-compte'); }}>{c.footerDelete}</a>
-        </div>
-        <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 12, margin: '14px 0 0' }}>
-          © {new Date().getFullYear()} YouPlaySport · {c.tagline}
-        </div>
+      {/* Pied de page : les pages publiques et les mentions légales. */}
+      <div style={{ borderTop: '1px solid var(--border)', marginTop: 40, paddingTop: 18,
+        display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center', fontSize: 13 }}>
+        <a href="#" onClick={(e) => { e.preventDefault(); router.push('/premiers-pas'); }}>{t('land.footer.steps')}</a>
+        <a href="#" onClick={(e) => { e.preventDefault(); router.push('/forfaits'); }}>{t('land.footer.plans')}</a>
+        <a href="#" onClick={(e) => { e.preventDefault(); router.push('/confidentialite'); }}>{t('land.footer.privacy')}</a>
+        <a href="#" onClick={(e) => { e.preventDefault(); router.push('/cgu'); }}>{t('land.footer.terms')}</a>
+        <a href="#" onClick={(e) => { e.preventDefault(); router.push('/suppression-compte'); }}>{t('land.footer.delete')}</a>
+      </div>
+      <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 12, margin: '14px 0 0' }}>
+        © {new Date().getFullYear()} YouPlaySport · {t('app.tagline')}
       </div>
     </div>
   );
