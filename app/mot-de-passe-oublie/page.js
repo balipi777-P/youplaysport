@@ -5,27 +5,36 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { useT, LangToggle } from '../../lib/i18n';
 
-const C = {
-  fr: {
-    title: 'Mot de passe oublié',
-    sub: 'Entrez votre e-mail : nous vous enverrons un lien pour choisir un nouveau mot de passe.',
-    email: 'Email', send: 'Envoyer le lien', sending: 'Envoi…',
-    sent: 'Si un compte existe pour cette adresse, un e-mail de réinitialisation vient d’être envoyé. Pensez à vérifier vos spams.',
-    back: '← Se connecter',
-  },
-  en: {
-    title: 'Forgot password',
-    sub: 'Enter your email: we’ll send you a link to choose a new password.',
-    email: 'Email', send: 'Send the link', sending: 'Sending…',
-    sent: 'If an account exists for this address, a reset email has just been sent. Remember to check your spam folder.',
-    back: '← Sign in',
-  },
-};
+/**
+ * Durée de validité annoncée du lien de réinitialisation. Doit rester alignée
+ * sur Supabase → Auth → Providers → Email → « Email OTP Expiration »
+ * (valeur en secondes) : n'annoncer ici que ce qui est réellement configuré.
+ */
+const LINK_MINUTES = 30;
+
+/** Indicateur « 1 2 3 » partagé par les deux écrans du parcours. */
+function Steps({ current }) {
+  return (
+    <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+      {[1, 2, 3].map((n) => {
+        const active = n === current;
+        return (
+          <div key={n} style={{
+            width: 24, height: 24, borderRadius: 999,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 12, fontWeight: 800,
+            background: active ? 'var(--brand)' : 'var(--peach)',
+            color: active ? '#fff' : 'var(--brand-dark)',
+          }}>{n}</div>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function MotDePasseOublie() {
   const router = useRouter();
-  const { lang } = useT();
-  const c = C[lang] || C.fr;
+  const { t } = useT();
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
@@ -44,6 +53,9 @@ export default function MotDePasseOublie() {
     } finally { setBusy(false); }
   }
 
+  /* Une fois le lien parti, l'utilisateur est à l'étape 2 : il attend son email. */
+  const step = sent ? 2 : 1;
+
   return (
     <div className="wrap">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
@@ -56,25 +68,38 @@ export default function MotDePasseOublie() {
         <LangToggle />
       </div>
 
-      <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.5px', margin: '0 0 6px' }}>{c.title}</h1>
-      <p style={{ color: 'var(--muted)', marginTop: 0, marginBottom: 20 }}>{c.sub}</p>
+      <Steps current={step} />
+      <div className="label" style={{ marginBottom: 4 }}>{t('pwd.step', { n: step })}</div>
+      <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.5px', margin: '0 0 6px' }}>
+        {sent ? t('pwd.sent.title') : t('pwd.ask.title')}
+      </h1>
+      {!sent && (
+        <p style={{ color: 'var(--muted)', marginTop: 0, marginBottom: 20, lineHeight: 1.5 }}>
+          {t('pwd.ask.sub', { minutes: LINK_MINUTES })}
+        </p>
+      )}
 
       {sent ? (
-        <div className="card"><div className="pill" style={{ background: '#E6F4EA', color: '#1E7B34' }}>✓</div>
-          <p style={{ fontSize: 14, lineHeight: 1.5, color: '#3D3A33' }}>{c.sent}</p>
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="pill" style={{ background: '#E6F4EA', color: '#1E7B34' }}>✓</div>
+          <p style={{ fontSize: 14, lineHeight: 1.5, color: '#3D3A33' }}>{t('pwd.sent')}</p>
         </div>
       ) : (
         <form onSubmit={submit} className="card">
           {err && <div className="error">{err}</div>}
-          <div className="label" style={{ marginBottom: 6 }}>{c.email}</div>
+          <div className="label" style={{ marginBottom: 6 }}>{t('pwd.email')}</div>
           <input className="input" type="email" required value={email}
-            onChange={(e) => setEmail(e.target.value)} placeholder="vous@email.com" />
-          <button className="btn" disabled={busy} type="submit">{busy ? c.sending : c.send}</button>
+            onChange={(e) => setEmail(e.target.value)} placeholder="vous@email.com"
+            style={{ marginBottom: 16 }} />
+          <button className="btn" disabled={busy} type="submit">{busy ? t('pwd.sending') : t('pwd.send')}</button>
         </form>
       )}
 
-      <p style={{ textAlign: 'center', fontSize: 14 }}>
-        <a href="#" onClick={(e) => { e.preventDefault(); router.push('/login'); }}>{c.back}</a>
+      <button className="btn ghost" onClick={() => router.push('/login')}>{t('pwd.backToLogin')}</button>
+
+      {/* Promesse « un email = un compte » : rassure avant de quitter l'app pour sa boîte mail. */}
+      <p style={{ color: 'var(--muted)', fontSize: 12, lineHeight: 1.5, marginTop: 18, textAlign: 'center' }}>
+        {t('pwd.oneAccount')}
       </p>
     </div>
   );

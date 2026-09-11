@@ -5,33 +5,29 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { useT, LangToggle } from '../../lib/i18n';
 
-const C = {
-  fr: {
-    title: 'Nouveau mot de passe',
-    sub: 'Choisissez un nouveau mot de passe pour votre compte.',
-    pwd: 'Nouveau mot de passe', pwd2: 'Confirmer le mot de passe',
-    save: 'Enregistrer', saving: 'Enregistrement…',
-    ok: 'Mot de passe mis à jour ✓ Vous pouvez maintenant vous connecter.',
-    mismatch: 'Les deux mots de passe ne correspondent pas.',
-    noSession: 'Ce lien de réinitialisation est invalide ou a expiré. Demandez-en un nouveau.',
-    askNew: 'Demander un nouveau lien', signIn: 'Se connecter',
-  },
-  en: {
-    title: 'New password',
-    sub: 'Choose a new password for your account.',
-    pwd: 'New password', pwd2: 'Confirm password',
-    save: 'Save', saving: 'Saving…',
-    ok: 'Password updated ✓ You can now sign in.',
-    mismatch: 'The two passwords do not match.',
-    noSession: 'This reset link is invalid or has expired. Request a new one.',
-    askNew: 'Request a new link', signIn: 'Sign in',
-  },
-};
+/** Indicateur « 1 2 3 » partagé par les deux écrans du parcours. */
+function Steps({ current }) {
+  return (
+    <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+      {[1, 2, 3].map((n) => {
+        const active = n === current;
+        return (
+          <div key={n} style={{
+            width: 24, height: 24, borderRadius: 999,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 12, fontWeight: 800,
+            background: active ? 'var(--brand)' : 'var(--peach)',
+            color: active ? '#fff' : 'var(--brand-dark)',
+          }}>{n}</div>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function Reinitialiser() {
   const router = useRouter();
-  const { lang } = useT();
-  const c = C[lang] || C.fr;
+  const { t } = useT();
   const [ready, setReady] = useState(false);
   const [hasSession, setHasSession] = useState(false);
   const [pwd, setPwd] = useState('');
@@ -52,7 +48,7 @@ export default function Reinitialiser() {
   async function submit(e) {
     e.preventDefault();
     setErr('');
-    if (pwd !== pwd2) { setErr(c.mismatch); return; }
+    if (pwd !== pwd2) { setErr(t('pwd.mismatch')); return; }
     setBusy(true);
     try {
       const { error } = await supabase.auth.updateUser({ password: pwd });
@@ -77,29 +73,35 @@ export default function Reinitialiser() {
         <LangToggle />
       </div>
 
-      <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.5px', margin: '0 0 6px' }}>{c.title}</h1>
-      <p style={{ color: 'var(--muted)', marginTop: 0, marginBottom: 20 }}>{c.sub}</p>
+      <Steps current={3} />
+      <div className="label" style={{ marginBottom: 4 }}>{t('pwd.step', { n: 3 })}</div>
+      <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.5px', margin: '0 0 6px' }}>{t('pwd.new.title')}</h1>
+      {!ok && hasSession && (
+        <p style={{ color: 'var(--muted)', marginTop: 0, marginBottom: 20, lineHeight: 1.5 }}>{t('pwd.new.sub')}</p>
+      )}
 
       {ok ? (
-        <div className="card">
-          <p style={{ fontSize: 14, lineHeight: 1.5, color: '#3D3A33', marginTop: 0 }}>{c.ok}</p>
-          <button className="btn" onClick={() => router.push('/login')}>{c.signIn}</button>
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="pill" style={{ background: '#E6F4EA', color: '#1E7B34' }}>✓</div>
+          <p style={{ fontSize: 14, lineHeight: 1.5, color: '#3D3A33' }}>{t('pwd.ok')}</p>
+          <button className="btn" onClick={() => router.push('/login')}>{t('login.signIn')}</button>
         </div>
       ) : !hasSession ? (
-        <div className="card">
-          <div className="error">{c.noSession}</div>
-          <button className="btn" onClick={() => router.push('/mot-de-passe-oublie')}>{c.askNew}</button>
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="error">{t('pwd.noSession')}</div>
+          <button className="btn" onClick={() => router.push('/mot-de-passe-oublie')}>{t('pwd.askNew')}</button>
         </div>
       ) : (
         <form onSubmit={submit} className="card">
           {err && <div className="error">{err}</div>}
-          <div className="label" style={{ marginBottom: 6 }}>{c.pwd}</div>
+          <div className="label" style={{ marginBottom: 6 }}>{t('pwd.new')}</div>
           <input className="input" type="password" required minLength={6} value={pwd}
             onChange={(e) => setPwd(e.target.value)} placeholder="••••••••" />
-          <div className="label" style={{ marginBottom: 6 }}>{c.pwd2}</div>
+          <div className="label" style={{ marginBottom: 6 }}>{t('pwd.confirm')}</div>
           <input className="input" type="password" required minLength={6} value={pwd2}
-            onChange={(e) => setPwd2(e.target.value)} placeholder="••••••••" />
-          <button className="btn" disabled={busy} type="submit">{busy ? c.saving : c.save}</button>
+            onChange={(e) => setPwd2(e.target.value)} placeholder="••••••••"
+            style={{ marginBottom: 16 }} />
+          <button className="btn" disabled={busy} type="submit">{busy ? t('pwd.saving') : t('pwd.save')}</button>
         </form>
       )}
     </div>
