@@ -7,19 +7,13 @@ import { loadMyChildren, pickChild, setStoredChildId } from '../lib/children';
 import { useT, LangToggle } from '../lib/i18n';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from './components/BottomNav';
 import ParentJournal from './components/ParentJournal';
+import AthleteToday from './components/AthleteToday';
 
-const AXIS_EMOJI = {
-  physique: '💪', motricite: '🤸', technique: '🎯',
-  tactique: '♟️', mental: '🧠', etat_esprit: '🤝', hygiene: '🌙',
-};
-
-/* Carnet de l'athlète : les 3 états de skill_status, du plus acquis au moins acquis,
-   avec le remplissage de barre et la clé i18n de chacun. */
-const SKILL_STATES = [
-  { status: 'validee', key: 'skill.validee', pct: 100, fill: 'var(--brand)' },
-  { status: 'en_progres', key: 'skill.enProgres', pct: 60, fill: '#D97A5C' },
-  { status: 'a_travailler', key: 'skill.aTravailler', pct: 20, fill: '#E3B49F' },
-];
+/** Date du jour au format ISO, pour comparer à sessions.date. */
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 export default function Home() {
   const router = useRouter();
@@ -42,6 +36,12 @@ export default function Home() {
   const [convocation, setConvocation] = useState(null);
   const [allSkills, setAllSkills] = useState([]);
   const [rsvpBusy, setRsvpBusy] = useState(false);
+  /* Propres à l'onglet Aujourd'hui de l'athlète : la séance du jour, toutes ses
+     convocations à venir, son historique de pointage et les bornes de sa saison. */
+  const [todaySession, setTodaySession] = useState(null);
+  const [convocations, setConvocations] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [season, setSeason] = useState(null);
   /* Tableau de bord staff : équipes encadrées, dernière séance publiée, identité. */
   const [staffTeams, setStaffTeams] = useState([]);
   const [staffSession, setStaffSession] = useState(null);
@@ -80,6 +80,8 @@ export default function Home() {
     let run = 0;
     for (const r of past) { if (r.status === 'present') run += 1; else break; }
     setStreak(run);
+    /* Même historique, remis dans l'ordre du calendrier : c'est la série de l'athlète. */
+    setHistory([...past].reverse().map((r) => ({ status: r.status, date: r.sessions.date })));
   }, []);
 
   /* Prochaine échéance de l'équipe de la fiche affichée et convocation associée.
@@ -102,9 +104,37 @@ export default function Home() {
         .eq('event_id', ev.id).eq('player_id', p.id).maybeSingle();
       setConvocation(conv || null);
     } else setConvocation(null);
-    if (!withNotebook) { setAllSkills([]); return; }
-    const { data: sk } = await supabase.from('skills').select('label, status, axis').eq('player_id', p.id);
+    if (!withNotebook) {
+      setAllSkills([]); setTodaySession(null); setConvocations([]); setSeason(null);
+      return;
+    }
+    const { data: sk } = await supabase.from('skills')
+      .select('label, status, axis, validated_at').eq('player_id', p.id);
     setAllSkills(sk || []);
+
+    /* Séance du jour. Elle est lisible avant publication — la RLS de sessions
+       n'ouvre que sur l'équipe — car « ce soir » se joue avant le compte rendu. */
+    let today = null;
+    if (p.team_id) {
+      const { data: ts } = await supabase.from('sessions')
+        .select('id, date, start_time, end_time, theme, published_at')
+        .eq('team_id', p.team_id).eq('date', todayISO()).limit(1);
+      today = (ts && ts[0]) || null;
+    }
+    setTodaySession(today);
+
+    /* Toutes les convocations à venir, et pas seulement la prochaine. */
+    const { data: cs } = await supabase.from('event_convocations')
+      .select('id, response, responded_at, events(id, type, opponent, place, datetime, rsvp_deadline)')
+      .eq('player_id', p.id);
+    setConvocations((cs || [])
+      .filter((c) => c.events?.datetime && new Date(c.events.datetime) >= new Date())
+      .sort((a, b) => new Date(a.events.datetime) - new Date(b.events.datetime)));
+
+    /* Bornes de la saison de l'équipe : sans elles, rien n'affirme « cette saison ». */
+    const { data: pd } = await supabase.from('players')
+      .select('teams(season_id, seasons(start_date, end_date))').eq('id', p.id).maybeSingle();
+    setSeason(pd?.teams?.seasons || null);
   }, []);
 
   /* Tableau de bord staff. Les équipes viennent de deux sources selon le rôle —
@@ -200,18 +230,20 @@ export default function Home() {
   useEffect(() => {
     if (!player) {
       setNextEvent(null); setConvocation(null); setAllSkills([]);
+      setTodaySession(null); setConvocations([]); setSeason(null);
       return;
     }
     loadUpcoming(player, myPlayerIds.includes(player.id));
   }, [player, myPlayerIds, loadUpcoming]);
 
-  /* Réponse à la convocation. L'enum rsvp_response ne connaît que 'present' et 'absent'. */
-  async function respond(answer) {
-    if (!player || !nextEvent || rsvpBusy) return;
+  /* Réponse à une convocation. L'enum rsvp_response ne connaît que 'present' et
+     'absent', et la RLS n'autorise cette mise à jour qu'au licencié lui-même. */
+  async function respond(eventId, answer) {
+    if (!player || !eventId || rsvpBusy) return;
     setRsvpBusy(true); setErr('');
     const { error } = await supabase.from('event_convocations')
       .update({ response: answer, responded_at: new Date().toISOString() })
-      .eq('event_id', nextEvent.id).eq('player_id', player.id);
+      .eq('event_id', eventId).eq('player_id', player.id);
     if (error) setErr(error.message);
     else await loadUpcoming(player, true);
     setRsvpBusy(false);
@@ -228,10 +260,6 @@ export default function Home() {
   if (!ready) return <div className="wrap"><p style={{ color: 'var(--muted)' }}>{t('common.loading')}</p></div>;
 
   const staff = memberships.find((m) => m.role === 'admin' || m.role === 'coach');
-  const mot = session?.messages?.find((m) => m.type === 'mot_coach');
-  const objectif = session?.messages?.find((m) => m.type === 'objectif');
-  const defi = session?.session_challenge;
-  const axisLabel = (a) => `${AXIS_EMOJI[a] || ''} ${t(`axis.${a}`)}`.trim();
 
   /* L'utilisateur consulte sa propre fiche : accueil au « tu ». */
   const isAthlete = !!player && myPlayerIds.includes(player.id);
@@ -246,13 +274,6 @@ export default function Home() {
      le plus élevé. Un compte multi-rôles (admin + parent) voit son journal, donc la
      nav parent ; l'accès staff reste les boutons de l'Espace Dirigeant plus bas. */
   const navRole = player ? (isAthlete ? 'athlete' : 'parent') : (staff ? 'coach' : 'parent');
-
-  /* Convocation : « Ce soir » si l'échéance tombe aujourd'hui, sinon « À venir ». */
-  const evDate = nextEvent?.datetime ? new Date(nextEvent.datetime) : null;
-  const evIsToday = !!evDate && evDate.toDateString() === new Date().toDateString();
-  const evTime = evDate
-    ? evDate.toLocaleTimeString(lang === 'en' ? 'en-GB' : 'fr-FR', { hour: '2-digit', minute: '2-digit' })
-    : '';
 
   /* Date du jour : « MERCREDI 10 SEPTEMBRE 2026 » / « WEDNESDAY 10 SEPTEMBER 2026 ». */
   const todayLabel = new Date()
@@ -307,116 +328,21 @@ export default function Home() {
 
       {/* ---- Vue Athlète : sa propre journée ---- */}
       {player && isAthlete && (
-        <>
-          <div style={{ marginBottom: 3, color: 'var(--muted)', fontSize: 10.5, fontWeight: 800, letterSpacing: '.9px' }}>
-            {todayLabel}
-          </div>
-          <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.4px', margin: '0 0 12px' }}>
-            {t('athlete.hello', { name: player.first_name })}
-          </h1>
-
-          {/* Convocation à venir + réponse */}
-          {nextEvent && convocation && (
-            <div className="card" style={{ border: '2px solid var(--brand)' }}>
-              <span className="pill">{evIsToday ? t('athlete.tonight') : t('athlete.upcoming')}</span>
-              <div className="q" style={{ fontSize: 17, fontWeight: 700, margin: '10px 0 2px' }}>
-                {t(`event.${nextEvent.type}`)}{nextEvent.opponent ? ` · ${nextEvent.opponent}` : ''}
-              </div>
-              <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-                {[evDate && `${fmt(nextEvent.datetime, lang)}${evTime ? ` · ${evTime}` : ''}`, nextEvent.place && `📍 ${nextEvent.place}`]
-                  .filter(Boolean).join('  ')}
-              </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                {[['present', 'rsvp.yes'], ['absent', 'rsvp.no']].map(([answer, key]) => {
-                  const on = convocation.response === answer;
-                  return (
-                    <button key={answer} type="button" disabled={rsvpBusy} onClick={() => respond(answer)}
-                      className={on ? 'btn' : 'btn ghost'} style={{ marginBottom: 0, flex: 1, opacity: rsvpBusy ? .6 : 1 }}>
-                      {t(key)}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-            <button className="btn ghost" style={{ marginBottom: 0 }} onClick={() => router.push('/carnet')}>{t('home.carnet')}</button>
-            <button className="btn ghost" style={{ marginBottom: 0 }} onClick={() => router.push('/agenda')}>{t('home.agenda')}</button>
-            <button className="btn ghost" style={{ marginBottom: 0 }} onClick={() => router.push('/calendrier')}>{t('home.calendar')}</button>
-          </div>
-          {!session && <div className="card"><p style={{ margin: 0, color: 'var(--muted)' }}>{t('home.noSession')}</p></div>}
-          {session && (
-            <>
-              <div className="label" style={{ marginBottom: 8 }}>{t('athlete.lastSession')}</div>
-              <div className="card" style={{ background: 'var(--brand)', color: '#fff', border: 'none' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <span className="q" style={{ fontWeight: 700, fontSize: 16 }}>⚽ {player.teams?.name}</span>
-                  <span style={{ fontSize: 12, opacity: .9 }}>{fmt(session.date, lang)}</span>
-                </div>
-                <div style={{ fontSize: 13, opacity: .95 }}>{t('home.theme')} : {session.theme}{attendance === 'present' && ` · ${t('home.present')}`}{attendance === 'late' && ` · ${t('home.late')}`}{attendance === 'absent' && ` · ${t('home.absent')}`}</div>
-              </div>
-              <div className="card">
-                <div className="label" style={{ marginBottom: 12 }}>{t('home.program')}</div>
-                {(session.session_axes || []).map((a, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 11, marginBottom: 11 }}>
-                    <div style={{ fontSize: 15 }}>{AXIS_EMOJI[a.axis] || ''}</div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 700, fontSize: 13 }}>{t(`axis.${a.axis}`)}</div>
-                      <div style={{ fontSize: 12, color: '#57534A', lineHeight: 1.4 }}>{a.comment}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {defi && (
-                <div className="card" style={{ background: 'var(--ink)', color: '#fff', border: 'none' }}>
-                  <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{t('home.weekChallenge')}</div>
-                  <div className="q" style={{ fontSize: 15, fontWeight: 700, color: '#F0B8A8', marginBottom: 8 }}>🎯 {defi.name}</div>
-                  <div style={{ fontSize: 13, color: '#E5E2DB', lineHeight: 1.5 }}>{defi.home_exercise} 💡 {defi.tip}</div>
-                </div>
-              )}
-              {(mot || objectif) && (
-                <div className="card">
-                  {mot && <div style={{ fontSize: 13, lineHeight: 1.5, color: '#3D3A33' }}>« {mot.body} »</div>}
-                  {objectif && <div className="pill" style={{ marginTop: 10 }}>🎯 {objectif.body}</div>}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Carnet complet de l'athlète : les 3 états, avec barre de progression */}
-          {isAthlete && (
-            <>
-              <div className="label" style={{ margin: '18px 0 8px' }}>{t('athlete.notebook')}</div>
-              <div className="card">
-                {allSkills.length === 0 && (
-                  <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>{t('athlete.noSkills')}</p>
-                )}
-                {SKILL_STATES.map(({ status, key, pct, fill }) => {
-                  const group = allSkills.filter((s) => s.status === status);
-                  if (group.length === 0) return null;
-                  return (
-                    <div key={status} style={{ marginBottom: 14 }}>
-                      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.6px', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 7 }}>
-                        {t(key)}
-                      </div>
-                      {group.map((s, i) => (
-                        <div key={i} style={{ marginBottom: 9 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: '#3D3A33', marginBottom: 4 }}>
-                            {AXIS_EMOJI[s.axis] ? `${AXIS_EMOJI[s.axis]} ` : ''}{s.label}
-                          </div>
-                          <div style={{ height: 7, borderRadius: 4, background: '#F1E9E1', overflow: 'hidden' }}>
-                            <div style={{ width: `${pct}%`, height: '100%', borderRadius: 4, background: fill }} />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </>
+        <AthleteToday
+          todayLabel={todayLabel}
+          player={player}
+          season={season}
+          todaySession={todaySession}
+          session={session}
+          attendance={attendance}
+          attendanceAt={attendanceAt}
+          sessionSkills={sessionSkills}
+          allSkills={allSkills}
+          convocations={convocations}
+          history={history}
+          rsvpBusy={rsvpBusy}
+          onRespond={respond}
+        />
       )}
 
       {/* ---- Vue Staff (coach / dirigeant) : tableau de bord ---- */}
