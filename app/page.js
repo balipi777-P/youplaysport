@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabaseClient';
 import { loadMyChildren, pickChild, setStoredChildId } from '../lib/children';
 import { useT, LangToggle } from '../lib/i18n';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from './components/BottomNav';
+import ParentJournal from './components/ParentJournal';
 
 const AXIS_EMOJI = {
   physique: '💪', motricite: '🤸', technique: '🎯',
@@ -29,6 +30,8 @@ export default function Home() {
   const [player, setPlayer] = useState(null);
   const [session, setSession] = useState(null);
   const [attendance, setAttendance] = useState(null);
+  const [attendanceAt, setAttendanceAt] = useState(null);
+  const [streak, setStreak] = useState(0);
   const [skills, setSkills] = useState([]);
   const [isSA, setIsSA] = useState(false);
   const [err, setErr] = useState('');
@@ -42,35 +45,51 @@ export default function Home() {
   /* Tableau de bord staff : équipes encadrées, dernière séance publiée, identité. */
   const [staffTeams, setStaffTeams] = useState([]);
   const [staffSession, setStaffSession] = useState(null);
-  const [staffName, setStaffName] = useState('');
+  /* Nom de l'utilisateur connecté : titre de l'espace staff et sous-titre du journal. */
+  const [userName, setUserName] = useState('');
 
   const loadChildData = useCallback(async (p) => {
     setPlayer(p || null);
-    if (!p) { setSession(null); setSkills([]); setAttendance(null); return; }
+    if (!p) {
+      setSession(null); setSkills([]); setAttendance(null); setAttendanceAt(null); setStreak(0);
+      return;
+    }
     const { data: sessions } = await supabase
       .from('sessions')
-      .select('id, date, theme, session_axes(axis, comment), session_challenge(name, home_exercise, competence, tip), messages(type, body)')
+      .select('id, date, start_time, end_time, theme, session_axes(axis, comment), session_challenge(name, home_exercise, competence, tip), messages(type, body, created_at)')
       .eq('team_id', p.team_id).not('published_at', 'is', null)
       .order('date', { ascending: false }).limit(1);
     const s = sessions && sessions[0];
     setSession(s || null);
     if (s) {
-      const { data: att } = await supabase.from('attendance').select('status')
+      const { data: att } = await supabase.from('attendance').select('status, timestamped_at')
         .eq('session_id', s.id).eq('player_id', p.id).limit(1);
       setAttendance(att && att[0] ? att[0].status : null);
-    } else setAttendance(null);
-    const { data: sk } = await supabase.from('skills').select('label, status')
+      setAttendanceAt(att && att[0] ? att[0].timestamped_at : null);
+    } else { setAttendance(null); setAttendanceAt(null); }
+    const { data: sk } = await supabase.from('skills').select('label, status, session_id, validated_at')
       .eq('player_id', p.id).eq('status', 'validee');
     setSkills(sk || []);
+
+    /* Série de présences : on remonte l'historique pointé, de la séance la plus
+       récente vers la plus ancienne, et on s'arrête au premier non-présent. */
+    const { data: hist } = await supabase.from('attendance')
+      .select('status, sessions(date, published_at)').eq('player_id', p.id);
+    const past = (hist || []).filter((r) => r.sessions?.published_at)
+      .sort((a, b) => (a.sessions.date < b.sessions.date ? 1 : -1));
+    let run = 0;
+    for (const r of past) { if (r.status === 'present') run += 1; else break; }
+    setStreak(run);
   }, []);
 
-  /* Données de la vue athlète : la prochaine échéance de son équipe, sa convocation
-     pour celle-ci, et l'intégralité de son carnet (les 3 états, pas seulement les acquis). */
-  const loadAthleteData = useCallback(async (p) => {
+  /* Prochaine échéance de l'équipe de la fiche affichée et convocation associée.
+     Le journal du parent l'annonce aussi, d'où le chargement dans les deux vues ;
+     le carnet complet (les 3 états) ne concerne, lui, que la vue athlète. */
+  const loadUpcoming = useCallback(async (p, withNotebook) => {
     let ev = null;
     if (p.team_id) {
       const { data: evs } = await supabase
-        .from('events').select('id, type, opponent, place, datetime')
+        .from('events').select('id, type, opponent, place, datetime, rsvp_deadline')
         .eq('team_id', p.team_id)
         .gte('datetime', new Date().toISOString())
         .order('datetime').limit(1);
@@ -83,6 +102,7 @@ export default function Home() {
         .eq('event_id', ev.id).eq('player_id', p.id).maybeSingle();
       setConvocation(conv || null);
     } else setConvocation(null);
+    if (!withNotebook) { setAllSkills([]); return; }
     const { data: sk } = await supabase.from('skills').select('label, status, axis').eq('player_id', p.id);
     setAllSkills(sk || []);
   }, []);
@@ -132,11 +152,6 @@ export default function Home() {
         .select('id', { count: 'exact', head: true }).eq('session_id', se.id).eq('status', 'present');
       setStaffSession({ ...se, presents: presents || 0, total: total || 0 });
     } else setStaffSession(null);
-
-    /* Uniquement full_name : l'email ne doit jamais servir de titre. Vide ici,
-       le rendu retombe sur un libellé i18n. */
-    const { data: au } = await supabase.from('app_users').select('full_name').eq('id', uid).maybeSingle();
-    setStaffName((au?.full_name || '').trim());
   }, []);
 
   const load = useCallback(async () => {
@@ -149,6 +164,12 @@ export default function Home() {
       ? await supabase.from('players').select('id').eq('user_id', uid)
       : { data: [] };
     setMyPlayerIds((own || []).map((r) => r.id));
+    /* Uniquement full_name : l'email ne doit jamais servir de titre. Vide ici,
+       le rendu retombe sur un libellé i18n ou masque la mention. */
+    const { data: au } = uid
+      ? await supabase.from('app_users').select('full_name').eq('id', uid).maybeSingle()
+      : { data: null };
+    setUserName((au?.full_name || '').trim());
     const { data: mem } = await supabase
       .from('memberships').select('role, club_id, clubs(name, join_code)');
     setMemberships(mem || []);
@@ -174,15 +195,15 @@ export default function Home() {
     })();
   }, [router, load]);
 
-  /* La fiche affichée est-elle celle de l'utilisateur lui-même ? On (re)charge alors
-     ses données d'athlète ; sinon on les vide pour que la vue Parent reste intacte. */
+  /* Échéance à venir de la fiche affichée. Le carnet complet n'est chargé que si
+     cette fiche est celle de l'utilisateur lui-même (vue athlète). */
   useEffect(() => {
-    if (!player || !myPlayerIds.includes(player.id)) {
+    if (!player) {
       setNextEvent(null); setConvocation(null); setAllSkills([]);
       return;
     }
-    loadAthleteData(player);
-  }, [player, myPlayerIds, loadAthleteData]);
+    loadUpcoming(player, myPlayerIds.includes(player.id));
+  }, [player, myPlayerIds, loadUpcoming]);
 
   /* Réponse à la convocation. L'enum rsvp_response ne connaît que 'present' et 'absent'. */
   async function respond(answer) {
@@ -192,7 +213,7 @@ export default function Home() {
       .update({ response: answer, responded_at: new Date().toISOString() })
       .eq('event_id', nextEvent.id).eq('player_id', player.id);
     if (error) setErr(error.message);
-    else await loadAthleteData(player);
+    else await loadUpcoming(player, true);
     setRsvpBusy(false);
   }
 
@@ -215,6 +236,12 @@ export default function Home() {
   /* L'utilisateur consulte sa propre fiche : accueil au « tu ». */
   const isAthlete = !!player && myPlayerIds.includes(player.id);
 
+  /* Compétences validées pendant la séance affichée, et non tout le carnet. */
+  const sessionSkills = session ? skills.filter((s) => s.session_id === session.id) : [];
+
+  /* Clubs distincts parmi les enfants rattachés au compte. */
+  const clubCount = new Set(children.map((c) => c.teams?.clubs?.name).filter(Boolean)).size;
+
   /* Onglets de la barre basse : ils suivent la vue réellement affichée, pas le rôle
      le plus élevé. Un compte multi-rôles (admin + parent) voit son journal, donc la
      nav parent ; l'accès staff reste les boutons de l'Espace Dirigeant plus bas. */
@@ -232,19 +259,8 @@ export default function Home() {
     .toLocaleDateString(lang === 'en' ? 'en-GB' : 'fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
     .toUpperCase();
 
-  /* Initiales d'un enfant, pour la pastille du sélecteur. */
-  const childInitials = (c) => `${(c.first_name || '')[0] || ''}${(c.last_name || '')[0] || ''}`.toUpperCase();
-
   /* Nom du sport dans la langue active. */
   const sportName = (sp) => (lang === 'en' ? sp?.name_en || sp?.name_fr : sp?.name_fr) || '';
-
-  /* Sous-ligne d'une pastille : « {icône} {club} · {sport} », sans les infos absentes. */
-  const childSub = (c) => {
-    const sp = c.teams?.sports;
-    const text = [c.teams?.clubs?.name, sportName(sp)].filter(Boolean).join(' · ');
-    if (!text) return '';
-    return sp?.icon ? `${sp.icon} ${text}` : text;
-  };
 
   /* « n licenciés », avec le singulier. */
   const memberLabel = (n) => t(n === 1 ? 'coach.memberOne' : 'coach.memberMany', { n });
@@ -266,18 +282,41 @@ export default function Home() {
 
       {err && <div className="error">{err}</div>}
 
-      {/* ---- Vue Parent : le journal ---- */}
-      {player && (
+      {/* ---- Vue Parent : la journée sportive de l'enfant sélectionné ---- */}
+      {player && !isAthlete && (
+        <ParentJournal
+          todayLabel={todayLabel}
+          parentName={userName}
+          kids={children}
+          player={player}
+          clubCount={clubCount}
+          session={session}
+          attendance={attendance}
+          attendanceAt={attendanceAt}
+          sessionSkills={sessionSkills}
+          streak={streak}
+          nextEvent={nextEvent}
+          convocation={convocation}
+          onSwitchChild={switchChild}
+          onAlerts={() => router.push('/alertes')}
+          onAdd={() => router.push('/ajouter')}
+          onCarnet={() => router.push('/carnet')}
+          onAgenda={() => router.push('/agenda')}
+        />
+      )}
+
+      {/* ---- Vue Athlète : sa propre journée ---- */}
+      {player && isAthlete && (
         <>
           <div style={{ marginBottom: 3, color: 'var(--muted)', fontSize: 10.5, fontWeight: 800, letterSpacing: '.9px' }}>
             {todayLabel}
           </div>
           <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.4px', margin: '0 0 12px' }}>
-            {isAthlete ? t('athlete.hello', { name: player.first_name }) : t('home.todayTitle')}
+            {t('athlete.hello', { name: player.first_name })}
           </h1>
 
-          {/* Convocation à venir + réponse (athlète uniquement) */}
-          {isAthlete && nextEvent && convocation && (
+          {/* Convocation à venir + réponse */}
+          {nextEvent && convocation && (
             <div className="card" style={{ border: '2px solid var(--brand)' }}>
               <span className="pill">{evIsToday ? t('athlete.tonight') : t('athlete.upcoming')}</span>
               <div className="q" style={{ fontSize: 17, fontWeight: 700, margin: '10px 0 2px' }}>
@@ -301,39 +340,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* Sélecteur d'enfant (visible dès un enfant, hors vue athlète) */}
-          {!isAthlete && children.length > 0 && (
-            <>
-              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: children.length > 1 ? 8 : 14 }}>
-                {children.map((c) => {
-                  const on = c.id === player.id;
-                  const sub = childSub(c);
-                  return (
-                    <button key={c.id} type="button" onClick={() => switchChild(c.id)}
-                      style={{ border: 'none', borderRadius: 18, padding: '9px 14px 9px 9px', textAlign: 'left',
-                        cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 9,
-                        background: on ? 'var(--brand)' : '#F1E9E1', color: on ? '#fff' : '#57534A' }}>
-                      <span className="q" style={{ width: 30, height: 30, flex: '0 0 30px', borderRadius: 10,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800,
-                        background: on ? 'rgba(255,255,255,.24)' : '#fff', color: on ? '#fff' : 'var(--brand-dark)' }}>
-                        {childInitials(c)}
-                      </span>
-                      <span>
-                        <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700 }}>{c.first_name}</span>
-                        {sub && <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, opacity: .8, marginTop: 1 }}>{sub}</span>}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {children.length > 1 && (
-                <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 14 }}>
-                  {t('home.oneAccount')}
-                </div>
-              )}
-            </>
-          )}
-
           <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
             <button className="btn ghost" style={{ marginBottom: 0 }} onClick={() => router.push('/carnet')}>{t('home.carnet')}</button>
             <button className="btn ghost" style={{ marginBottom: 0 }} onClick={() => router.push('/agenda')}>{t('home.agenda')}</button>
@@ -342,9 +348,7 @@ export default function Home() {
           {!session && <div className="card"><p style={{ margin: 0, color: 'var(--muted)' }}>{t('home.noSession')}</p></div>}
           {session && (
             <>
-              {isAthlete && (
-                <div className="label" style={{ marginBottom: 8 }}>{t('athlete.lastSession')}</div>
-              )}
+              <div className="label" style={{ marginBottom: 8 }}>{t('athlete.lastSession')}</div>
               <div className="card" style={{ background: 'var(--brand)', color: '#fff', border: 'none' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                   <span className="q" style={{ fontWeight: 700, fontSize: 16 }}>⚽ {player.teams?.name}</span>
@@ -364,13 +368,6 @@ export default function Home() {
                   </div>
                 ))}
               </div>
-              {/* Vue parent seulement : chez l'athlète, « Ton carnet » plus bas dit déjà tout. */}
-              {!isAthlete && skills.length > 0 && (
-                <div className="card" style={{ background: 'var(--peach)', border: 'none' }}>
-                  <div className="label" style={{ color: 'var(--brand-dark)' }}>{t('home.skillValidated')}</div>
-                  <div className="q" style={{ fontSize: 15, fontWeight: 700, color: '#5F2A1C', marginTop: 4 }}>{skills.map((s) => s.label).join(', ')} ✓</div>
-                </div>
-              )}
               {defi && (
                 <div className="card" style={{ background: 'var(--ink)', color: '#fff', border: 'none' }}>
                   <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{t('home.weekChallenge')}</div>
@@ -433,7 +430,7 @@ export default function Home() {
             {staff.clubs?.name ? ` · ${staff.clubs.name}` : ''}
           </div>
           <h1 className="q" style={{ fontSize: 22, letterSpacing: '-0.4px', margin: '0 0 16px', wordBreak: 'break-word' }}>
-            {staffName || t('coach.fallbackName')}
+            {userName || t('coach.fallbackName')}
           </h1>
 
           {/* 2. Séance du jour */}
