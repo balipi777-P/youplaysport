@@ -3,9 +3,11 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useT } from '../../lib/i18n';
 
-/* Onglets par rôle. Uniquement des routes qui existent. */
+/* Onglets par rôle. Uniquement des routes qui existent.
+   Groupes pointe sur l'accueil : c'est là que le coach voit ses groupes. Le
+   dirigeant garde l'écran de gestion du club, atteint depuis ce même accueil. */
 const STAFF_TABS = [
-  { href: '/club', icon: '👥', key: 'nav.groups' },
+  { href: '/', icon: '👥', key: 'nav.groups' },
   { href: '/seance', icon: '📝', key: 'nav.session' },
   { href: '/evenements', icon: '📣', key: 'nav.events' },
   { href: '/calendrier', icon: '📆', key: 'nav.calendar' },

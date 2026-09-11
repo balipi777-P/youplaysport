@@ -46,10 +46,23 @@ export default function Seance() {
       }
       const uniq = Object.values(Object.fromEntries(all.map((t) => [t.id, t])));
       setTeams(uniq);
-      if (uniq[0]) setTeamId(uniq[0].id);
+      /* ?team=… : l'accueil coach ouvre la séance d'un groupe précis. L'identifiant
+         n'est retenu que s'il correspond vraiment à une équipe encadrée. */
+      const wanted = new URLSearchParams(window.location.search).get('team');
+      const pre = uniq.find((tm) => tm.id === wanted);
+      if (pre) setTeamId(pre.id);
+      else if (uniq[0]) setTeamId(uniq[0].id);
       setReady(true);
     })();
   }, [router]);
+
+  /* L'ancre (#presences, #competences) ne peut être suivie qu'une fois l'écran
+     rendu : au chargement, les blocs n'existent pas encore. */
+  useEffect(() => {
+    if (!ready || !window.location.hash) return;
+    document.getElementById(window.location.hash.slice(1))
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [ready]);
 
   useEffect(() => {
     if (!teamId) { setTeamPlayers([]); return; }
@@ -180,7 +193,7 @@ export default function Seance() {
           </div>
 
           {/* ===== 2. Présences ===== */}
-          <div className="card">
+          <div className="card" id="presences">
             {step(2, t('sea.presence'))}
             {teamPlayers.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('sea.noMembers')}</div>}
             {teamPlayers.map((p, idx) => {
@@ -245,7 +258,7 @@ export default function Seance() {
           </div>
 
           {/* ===== 4. Compétences validées ===== */}
-          <div className="card">
+          <div className="card" id="competences">
             {step(4, t('sea.skillsTitle'), <span style={{ textTransform: 'none', fontWeight: 500, color: 'var(--muted)' }}> {t('sea.optional')}</span>)}
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
               {t('sea.skillsHint')}

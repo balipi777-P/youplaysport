@@ -8,6 +8,7 @@ import { useT, LangToggle } from '../lib/i18n';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from './components/BottomNav';
 import ParentJournal from './components/ParentJournal';
 import AthleteToday from './components/AthleteToday';
+import CoachGroups from './components/CoachGroups';
 
 /** Date du jour au format ISO, pour comparer à sessions.date. */
 function todayISO() {
@@ -164,23 +165,47 @@ export default function Home() {
       for (const tm of list) tm.memberCount = per[tm.id] || 0;
     }
     list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+    /* Jours d'entraînement. teams ne porte aucun créneau : on les déduit des
+       séances réellement tenues, et seulement quand un jour revient — une séance
+       isolée ne fait pas un créneau hebdomadaire. On ne garde que les numéros de
+       jour, les noms se traduisent au rendu. */
+    if (ids.length) {
+      const { data: all } = await supabase.from('sessions').select('team_id, date').in('team_id', ids);
+      const per = {};
+      for (const s of all || []) {
+        const d = new Date(`${s.date}T12:00:00`);
+        if (Number.isNaN(d.getTime())) continue;
+        per[s.team_id] = per[s.team_id] || {};
+        per[s.team_id][d.getDay()] = (per[s.team_id][d.getDay()] || 0) + 1;
+      }
+      for (const tm of list) {
+        tm.weekdays = Object.entries(per[tm.id] || {})
+          .filter(([, n]) => n >= 2).map(([d]) => Number(d))
+          .sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
+      }
+    }
     setStaffTeams(list);
 
-    /* Séance du jour : la plus récente publiée parmi les équipes encadrées. */
+    /* Séance du jour, publiée ou non : le coach la prépare avant d'en publier
+       le compte rendu. La RLS de sessions n'ouvre que sur ses équipes. */
     let se = null;
     if (ids.length) {
       const { data: ss } = await supabase.from('sessions')
-        .select('id, team_id, date, theme, teams(name), published_at')
-        .in('team_id', ids).not('published_at', 'is', null)
-        .order('date', { ascending: false }).limit(1);
+        .select('id, team_id, date, start_time, end_time, theme, teams(name, category)')
+        .in('team_id', ids).eq('date', todayISO()).order('start_time').limit(1);
       se = (ss && ss[0]) || null;
     }
     if (se) {
-      const { count: total } = await supabase.from('attendance')
+      const { count: marked } = await supabase.from('attendance')
         .select('id', { count: 'exact', head: true }).eq('session_id', se.id);
       const { count: presents } = await supabase.from('attendance')
         .select('id', { count: 'exact', head: true }).eq('session_id', se.id).eq('status', 'present');
-      setStaffSession({ ...se, presents: presents || 0, total: total || 0 });
+      const team = list.find((tm) => tm.id === se.team_id);
+      setStaffSession({
+        ...se, marked: (marked || 0) > 0, presents: presents || 0,
+        roster: team?.memberCount || marked || 0,
+      });
     } else setStaffSession(null);
   }, []);
 
@@ -283,8 +308,22 @@ export default function Home() {
   /* Nom du sport dans la langue active. */
   const sportName = (sp) => (lang === 'en' ? sp?.name_en || sp?.name_fr : sp?.name_fr) || '';
 
-  /* « n licenciés », avec le singulier. */
-  const memberLabel = (n) => t(n === 1 ? 'coach.memberOne' : 'coach.memberMany', { n });
+  /* Libellés dépendants de la langue : calculés au rendu, pour qu'un changement
+     de langue ne relance aucune requête. */
+  const weekdayName = (d) => new Date(Date.UTC(2024, 0, 7 + d))
+    .toLocaleDateString(lang === 'en' ? 'en-GB' : 'fr-FR', { weekday: 'long', timeZone: 'UTC' });
+  const coachTeams = staffTeams.map((tm) => ({
+    ...tm,
+    sportName: sportName(tm.sports),
+    days: (tm.weekdays || []).map(weekdayName).join(', '),
+  }));
+
+  /* Un coach qui n'encadre qu'un club n'a pas besoin de le lire à chaque ligne. */
+  const manyClubs = new Set(staffTeams.map((tm) => tm.club_id)).size > 1;
+
+  /* Séance pré-remplie : l'écran Séance sélectionne l'équipe passée en paramètre. */
+  const openSession = (teamId, hash = '') =>
+    router.push(`/seance${teamId ? `?team=${teamId}` : ''}${hash}`);
 
   return (
     <div className="wrap" style={{ paddingBottom: BOTTOM_NAV_HEIGHT + 24 }}>
@@ -345,100 +384,24 @@ export default function Home() {
         />
       )}
 
-      {/* ---- Vue Staff (coach / dirigeant) : tableau de bord ---- */}
+      {/* ---- Vue Coach / Dirigeant : ses groupes ---- */}
       {staff && (
         <>
           {player && <div style={{ borderTop: '1px solid var(--border)', margin: '20px 0 4px' }} />}
-
-          {/* 1. Identité */}
-          <div style={{ marginBottom: 4, color: 'var(--muted)', fontSize: 13, fontWeight: 600 }}>
-            {t('home.space')} {t(`role.${staff.role}`)}
-            {staff.clubs?.name ? ` · ${staff.clubs.name}` : ''}
-          </div>
-          <h1 className="q" style={{ fontSize: 22, letterSpacing: '-0.4px', margin: '0 0 16px', wordBreak: 'break-word' }}>
-            {userName || t('coach.fallbackName')}
-          </h1>
-
-          {/* 2. Séance du jour */}
-          <div className="label" style={{ marginBottom: 8 }}>{t('coach.sessionOfDay')}</div>
-          {staffSession ? (
-            <div className="card" style={{ background: '#E9F1EA', border: 'none' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, marginBottom: 4 }}>
-                <span className="q" style={{ fontWeight: 700, fontSize: 16, color: '#2E5A43' }}>
-                  {staffSession.teams?.name}
-                </span>
-                <span style={{ fontSize: 12, color: '#4F7A63', whiteSpace: 'nowrap' }}>{fmt(staffSession.date, lang)}</span>
-              </div>
-              {staffSession.theme && (
-                <div style={{ fontSize: 13, color: '#3E6B54', lineHeight: 1.5 }}>{t('home.theme')} : {staffSession.theme}</div>
-              )}
-              <div style={{ display: 'inline-block', marginTop: 10, padding: '5px 11px', borderRadius: 999,
-                background: '#fff', color: '#2E5A43', fontSize: 12, fontWeight: 700 }}>
-                ✓ {t('coach.presentOf', { n: staffSession.presents, total: staffSession.total })}
-              </div>
-              <button className="btn" style={{ marginTop: 12, marginBottom: 0 }} onClick={() => router.push('/seance')}>
-                {t('coach.openSession')}
-              </button>
-            </div>
-          ) : (
-            <div className="card">
-              <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>{t('coach.noSessionYet')}</p>
-              <button className="btn" style={{ marginBottom: 0 }} onClick={() => router.push('/seance')}>{t('home.createSession')}</button>
-            </div>
-          )}
-
-          {/* Code d'invitation du club (dirigeant) */}
-          {staff.role === 'admin' && staff.clubs?.join_code && (
-            <div className="card" style={{ background: 'var(--peach)', border: 'none' }}>
-              <div className="label" style={{ color: 'var(--brand-dark)' }}>{t('home.inviteCode')}</div>
-              <div className="q" style={{ fontSize: 26, fontWeight: 800, letterSpacing: 3, color: '#5F2A1C', marginTop: 4 }}>
-                {staff.clubs.join_code}
-              </div>
-              <div style={{ fontSize: 12, color: '#7A4030', marginTop: 6 }}>
-                {t('home.inviteHint')}
-              </div>
-            </div>
-          )}
-
-          {/* 3. Mes groupes */}
-          <div className="label" style={{ margin: '18px 0 8px' }}>{t('coach.myGroups')}</div>
-          {staffTeams.length === 0 ? (
-            <div className="card"><p style={{ margin: 0, color: 'var(--muted)', fontSize: 13 }}>{t('club.noTeam')}</p></div>
-          ) : (
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              {staffTeams.map((tm, i) => (
-                <button key={tm.id} type="button"
-                  onClick={() => router.push(staff.role === 'admin' ? '/club' : '/seance')}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 11, padding: '12px 14px',
-                    background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
-                    borderTop: i === 0 ? 'none' : '1px solid var(--border)' }}>
-                  <span style={{ width: 34, height: 34, flex: '0 0 34px', borderRadius: 11, background: 'var(--peach)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
-                    {tm.sports?.icon || '🏅'}
-                  </span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: 'block', fontWeight: 700, fontSize: 13.5, color: 'var(--ink)' }}>{tm.name}</span>
-                    <span style={{ display: 'block', fontSize: 11.5, color: 'var(--muted)', marginTop: 1 }}>
-                      {[tm.clubs?.name, tm.category, sportName(tm.sports)].filter(Boolean).join(' · ')}
-                    </span>
-                  </span>
-                  <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--brand-dark)', whiteSpace: 'nowrap' }}>
-                    {memberLabel(tm.memberCount || 0)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* 4. Accès rapide */}
-          <div className="label" style={{ margin: '18px 0 8px' }}>{t('coach.quickAccess')}</div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            <button className="btn" style={{ marginBottom: 0 }} onClick={() => router.push('/seance')}>{t('coach.newSession')}</button>
-            <button className="btn ghost" style={{ marginBottom: 0 }} onClick={() => router.push('/evenements')}>{t('coach.newEvent')}</button>
-          </div>
-          {staff.role === 'admin' && (
-            <button className="btn ghost" style={{ marginBottom: 10 }} onClick={() => router.push('/club')}>{t('home.manageClub')}</button>
-          )}
+          <CoachGroups
+            todayLabel={todayLabel}
+            coachName={userName}
+            todaySession={staffSession}
+            teams={coachTeams}
+            showClub={manyClubs}
+            joinCode={staff.role === 'admin' ? staff.clubs?.join_code || null : null}
+            onOpenSession={openSession}
+            onNewSession={() => openSession('')}
+            onNewEvent={() => router.push('/evenements')}
+            onPresence={() => openSession(staffSession?.team_id || coachTeams[0]?.id || '', '#presences')}
+            onSkills={() => openSession(staffSession?.team_id || coachTeams[0]?.id || '', '#competences')}
+            onManageClub={staff.role === 'admin' ? () => router.push('/club') : null}
+          />
         </>
       )}
 
@@ -461,9 +424,4 @@ export default function Home() {
       <BottomNav role={navRole} />
     </div>
   );
-}
-
-function fmt(d, lang) {
-  try { return new Date(d).toLocaleDateString(lang === 'en' ? 'en-GB' : 'fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }); }
-  catch { return d; }
 }
