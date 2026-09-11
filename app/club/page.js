@@ -161,6 +161,9 @@ export default function Club() {
   const [pLast, setPLast] = useState('');
   const [parentEmail, setParentEmail] = useState({});     // {playerId: email}
   const [teamCoachEmail, setTeamCoachEmail] = useState({}); // {teamId: email}
+  const [tkSubject, setTkSubject] = useState('');
+  const [tkBody, setTkBody] = useState('');
+  const [tkPriority, setTkPriority] = useState('normal');
 
   const flash = (msg) => { setOk(msg); setErr(''); setTimeout(() => setOk(''), 3500); };
 
@@ -610,6 +613,32 @@ export default function Club() {
     </div>
   );
 
+  /* Les deux boutons d'en-tête, identiques d'une section à l'autre. Par défaut
+     « Nouveau groupe » emmène là où le formulaire de création se trouve. */
+  const headButtons = (onNew) => (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <button type="button" className="btn ghost" style={{ width: 'auto', padding: '11px 16px', fontSize: 14 }}
+        onClick={() => setCsvNote((v) => !v)}>
+        {t('adm.importCsv')}
+      </button>
+      <button type="button" className="btn" style={{ width: 'auto', padding: '11px 16px', fontSize: 14 }}
+        onClick={onNew || (() => { setSection('licences'); setMenuOpen(false); })}>
+        {t('adm.newTeam')}
+      </button>
+    </div>
+  );
+
+  /* Le statut d'un ticket est du texte libre, écrit par la plateforme. On
+     reconnaît le vocabulaire employé aujourd'hui et on affiche tel quel ce
+     qu'on ne connaît pas, plutôt que de le ranger de force dans une case. */
+  const ticketStatus = (raw) => {
+    const s = (raw || '').toLowerCase().replace(/[\s-]+/g, '_');
+    if (s === 'resolved' || s === 'closed') return { label: t('adm.sup.resolved'), bg: '#E6F4EA', ink: '#1E7B34' };
+    if (s === 'in_progress' || s === 'pending') return { label: t('adm.sup.inProgress'), bg: '#FFF1E3', ink: '#9A5B18' };
+    if (s === 'open') return { label: t('adm.sup.open'), bg: 'var(--peach)', ink: 'var(--brand-dark)' };
+    return { label: raw, bg: '#F1EEE8', ink: 'var(--muted)' };
+  };
+
   const panel = (title, children) => (
     <div className="card" style={{ marginBottom: 0 }}>
       <div className="label" style={{ marginBottom: 8 }}>{title}</div>
@@ -775,18 +804,7 @@ export default function Club() {
   function TeamsSection() {
     return (
       <>
-        {sectionHead('adm.nav.teams', (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button type="button" className="btn ghost" style={{ width: 'auto', padding: '11px 16px', fontSize: 14 }}
-              onClick={() => setCsvNote((v) => !v)}>
-              {t('adm.importCsv')}
-            </button>
-            <button type="button" className="btn" style={{ width: 'auto', padding: '11px 16px', fontSize: 14 }}
-              onClick={() => { setSection('licences'); setMenuOpen(false); }}>
-              {t('adm.newTeam')}
-            </button>
-          </div>
-        ))}
+        {sectionHead('adm.nav.teams', headButtons())}
 
         {csvNote && (
           <div className="card" style={{ background: '#fff', fontSize: 13, color: 'var(--muted)', lineHeight: 1.55 }}>
@@ -1006,17 +1024,8 @@ export default function Club() {
     const roster = details[teamId];
     return (
       <>
-        {sectionHead('adm.lic.title', (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button type="button" className="btn ghost" style={{ width: 'auto', padding: '11px 16px', fontSize: 14 }}
-              onClick={() => setCsvNote((v) => !v)}>
-              {t('adm.importCsv')}
-            </button>
-            <button type="button" className="btn" style={{ width: 'auto', padding: '11px 16px', fontSize: 14 }}
-              onClick={() => { setTeamName(''); document.getElementById('adm-newteam')?.focus(); }}>
-              {t('adm.newTeam')}
-            </button>
-          </div>
+        {sectionHead('adm.lic.title', headButtons(
+          () => { setTeamName(''); document.getElementById('adm-newteam')?.focus(); },
         ))}
 
         {csvNote && (
@@ -1169,21 +1178,87 @@ export default function Club() {
   }
 
   function SupportSection() {
+    /* La date de résolution n'est enregistrée nulle part : support_tickets ne
+       porte que created_at. On le dit une fois, et seulement si un ticket est
+       effectivement résolu. */
+    const anyResolved = tickets.some((tk) => ['resolved', 'closed'].includes((tk.status || '').toLowerCase()));
+    const prio = (key, label) => (
+      <button type="button" onClick={() => setTkPriority(key)}
+        style={{ flex: 1, padding: '11px 12px', borderRadius: 12, fontSize: 13.5, fontWeight: 700,
+          cursor: 'pointer', border: `1.5px solid ${tkPriority === key ? 'var(--brand)' : 'var(--border)'}`,
+          background: tkPriority === key ? 'var(--peach)' : '#fff',
+          color: tkPriority === key ? 'var(--brand-dark)' : 'var(--ink)' }}>
+        {label}
+      </button>
+    );
+
     return (
       <>
-        {sectionHead('adm.nav.support')}
-        <div className="card">
-          {tickets.length === 0
-            ? <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>{t('adm.noTickets')}</div>
-            : tickets.map((tk, i) => (
-              <div key={tk.id} style={{ borderTop: i ? '1px solid var(--border)' : 'none', padding: '10px 0',
-                display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 700, fontSize: 14 }}>{tk.subject}</span>
-                <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>
-                  {[tk.status, dayText((tk.created_at || '').slice(0, 10))].filter(Boolean).join(' · ')}
-                </span>
+        {sectionHead('adm.sup.title', headButtons())}
+
+        {csvNote && (
+          <div className="card" style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.55 }}>{t('adm.importSoon')}</div>
+        )}
+
+        <div className="cons-two">
+          {/* ============ Contacter le support ============ */}
+          <div className="card" style={{ marginBottom: 0 }}>
+            <div className="label" style={{ marginBottom: 8 }}>{t('adm.sup.contact')}</div>
+            <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 14 }}>
+              {t('adm.sup.intro')}
+            </div>
+
+            <input className="input" value={tkSubject} onChange={(e) => setTkSubject(e.target.value)}
+              placeholder={t('adm.sup.subjectPh')} />
+            <textarea className="input" rows={5} value={tkBody} onChange={(e) => setTkBody(e.target.value)}
+              placeholder={t('adm.sup.bodyPh')} style={{ marginTop: 10, resize: 'vertical', lineHeight: 1.5 }} />
+
+            <div className="label" style={{ margin: '14px 0 8px' }}>{t('adm.sup.priority')}</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {prio('normal', t('adm.sup.normal'))}
+              {prio('urgent', t('adm.sup.urgent'))}
+            </div>
+
+            <button type="button" className="btn" style={{ marginTop: 14 }}
+              onClick={() => flash(t('adm.sup.sendSoon'))}>
+              {t('adm.sup.send')}
+            </button>
+          </div>
+
+          {/* ============ Mes tickets ============ */}
+          <div className="card" style={{ marginBottom: 0 }}>
+            <div className="label" style={{ marginBottom: 8 }}>{t('adm.sup.mine')}</div>
+            {tickets.length === 0 && (
+              <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>{t('adm.noTickets')}</div>
+            )}
+            {tickets.map((tk, i) => {
+              const st = ticketStatus(tk.status);
+              const sub = [
+                t('adm.sup.openedOn', { d: dayText((tk.created_at || '').slice(0, 10)) }),
+                tk.priority ? t(tk.priority === 'urgent' ? 'adm.sup.urgent' : 'adm.sup.normal') : '',
+              ].filter(Boolean).join(' · ');
+              return (
+                <div key={tk.id} style={{ borderTop: i ? '1px solid var(--border)' : 'none', padding: '11px 0',
+                  display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, overflowWrap: 'anywhere' }}>
+                      {tk.subject || t('adm.sup.noSubject')}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>{sub}</div>
+                  </div>
+                  <span style={{ flex: '0 0 auto', fontSize: 11.5, fontWeight: 700, padding: '5px 10px',
+                    borderRadius: 999, background: st.bg, color: st.ink }}>
+                    {st.label}
+                  </span>
+                </div>
+              );
+            })}
+            {anyResolved && (
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginTop: 10 }}>
+                {t('adm.sup.noResolvedDate')}
               </div>
-            ))}
+            )}
+          </div>
         </div>
       </>
     );
