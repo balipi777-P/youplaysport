@@ -70,6 +70,52 @@ function accountLabel(u) {
   return email ? email.split('@')[0] : '';
 }
 
+/**
+ * Colonnes attendues dans le CSV d'import. Les exemples documentent le format
+ * du fichier — ce ne sont pas des licenciés du club, et rien n'est lu en base
+ * pour les produire.
+ */
+const CSV_COLUMNS = [
+  { col: 'nom', field: 'adm.lic.colLast', sample: 'Reynaud' },
+  { col: 'prenom', field: 'adm.lic.colFirst', sample: 'Camille' },
+  { col: 'date_naissance', field: 'adm.lic.colBirth', sample: '14/03/2016' },
+  { col: 'email_parent', field: 'adm.lic.colParent', sample: 'h.reynaud@email.fr' },
+  { col: 'groupe', field: 'adm.lic.colGroup', sample: 'U11 Football' },
+];
+
+/**
+ * Nombre de lignes de données d'un CSV : on retire l'en-tête et les lignes
+ * vides. Purement local — le fichier n'est jamais envoyé, l'import n'est pas
+ * encore câblé, mais le compteur du bouton reste un vrai compteur.
+ */
+function countCsvRows(text) {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
+  return Math.max(0, lines.length - 1);
+}
+
+/** Ancienneté d'une demande, en clé de traduction + quantité. */
+function since(iso) {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(ms)) return null;
+  const d = Math.floor(ms / 86400000);
+  if (d >= 1) return { key: d === 1 ? 'adm.lic.sinceDay' : 'adm.lic.sinceDays', n: d };
+  const h = Math.floor(ms / 3600000);
+  if (h >= 1) return { key: h === 1 ? 'adm.lic.sinceHour' : 'adm.lic.sinceHours', n: h };
+  return { key: 'adm.lic.sinceNow', n: 0 };
+}
+
+/** Âge révolu à partir d'une date de naissance, ou null si elle manque. */
+function ageOf(birthdate) {
+  if (!birthdate) return null;
+  const b = new Date(`${birthdate}T12:00:00`);
+  if (Number.isNaN(b.getTime())) return null;
+  const now = new Date();
+  let a = now.getFullYear() - b.getFullYear();
+  const m = now.getMonth() - b.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) a -= 1;
+  return a >= 0 ? a : null;
+}
+
 /** Jours pleins entre aujourd'hui et une date, jamais négatif. */
 function daysUntil(iso) {
   const end = new Date(iso);
@@ -97,6 +143,9 @@ export default function Club() {
   const [seasons, setSeasons] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [tickets, setTickets] = useState([]);
+  const [pendings, setPendings] = useState([]);
+  const [csv, setCsv] = useState(null);   // {name, rows} du fichier déposé
+  const [dragging, setDragging] = useState(false);
   const [memberCount, setMemberCount] = useState(0);
   const [coachCount, setCoachCount] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -247,7 +296,8 @@ export default function Club() {
 
   const loadTeams = useCallback(async (clubId, keep) => {
     const { data } = await supabase.from('teams')
-      .select('id, name, category, sport_id, sports(name_fr, name_en, icon)').eq('club_id', clubId).order('name');
+      .select('id, name, category, sport_id, sports(name_fr, name_en, icon, accent_color)')
+      .eq('club_id', clubId).order('name');
     const list = data || [];
     setTeams(list);
     setTeamId((cur) => {
@@ -275,14 +325,29 @@ export default function Club() {
       if (sp && sp[0]) setTeamSport(sp[0].id);
       if (c) {
         await loadTeams(c.id);
-        const [se, doc, tk] = await Promise.all([
+        const [se, doc, tk, pl] = await Promise.all([
           supabase.from('seasons').select('id, name, start_date, end_date').eq('club_id', c.id).order('start_date'),
           supabase.from('documents').select('id, name, url, team_id, created_at').eq('club_id', c.id).order('created_at', { ascending: false }),
           supabase.from('support_tickets').select('id, subject, status, priority, created_at').eq('club_id', c.id).order('created_at', { ascending: false }),
+          supabase.from('pending_links').select('id, target_type, target_ref, email, created_at, expires_at')
+            .eq('club_id', c.id).order('created_at', { ascending: false }),
         ]);
         setSeasons(se.data || []);
         setDocuments(doc.data || []);
         setTickets(tk.data || []);
+
+        /* Demandes en attente : on écarte celles qui ont expiré, puis on résout
+           le licencié visé en un seul aller-retour. */
+        const rows = (pl.data || []).filter((r) => !r.expires_at || new Date(r.expires_at) > new Date());
+        const refs = [...new Set(rows.map((r) => r.target_ref).filter(Boolean))];
+        const who = {};
+        if (refs.length) {
+          const { data: ps } = await supabase.from('players').select('id, first_name, last_name, birthdate').in('id', refs);
+          for (const p of ps || []) {
+            who[p.id] = { name: `${p.first_name} ${p.last_name || ''}`.trim(), birthdate: p.birthdate };
+          }
+        }
+        setPendings(rows.map((r) => ({ ...r, player: who[r.target_ref] || null })));
       }
       setReady(true);
     })();
@@ -397,6 +462,21 @@ export default function Club() {
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
   }
 
+  /**
+   * Lit un CSV déposé pour n'en garder que le nom et le nombre de lignes de
+   * données. Tout se passe dans le navigateur : le fichier n'est pas envoyé et
+   * l'import n'est pas encore câblé — mais le compteur du bouton est réel.
+   */
+  async function takeCsv(file) {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      setCsv({ name: file.name, rows: countCsvRows(text) });
+    } catch {
+      setCsv({ name: file.name, rows: 0 });
+    }
+  }
+
   const css = `
     .cons { display: flex; align-items: stretch; min-height: 100vh; }
     .cons-side { flex: 0 0 268px; width: 268px; background: #fff; border-right: 1px solid var(--border);
@@ -407,6 +487,8 @@ export default function Club() {
     .cons-grid { display: grid; grid-template-columns: minmax(0, 1.85fr) minmax(0, 1fr); gap: 14px; align-items: start; }
     .cons-row { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 2fr) 104px 88px; gap: 10px; align-items: center; }
     .cons-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+    .cons-map { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.15fr);
+      gap: 8px; align-items: center; }
     @media (max-width: 1080px) { .cons-grid { grid-template-columns: 1fr; } }
     @media (max-width: 900px) {
       .cons { display: block; }
@@ -534,6 +616,159 @@ export default function Club() {
       {children}
     </div>
   );
+
+  /* ---------- blocs de la section Licenciés ---------- */
+
+  const csvCard = () => {
+    const rows = csv ? csv.rows : 0;
+    const off = rows === 0;
+    return (
+      <div className="card" style={{ marginBottom: 0 }}>
+        <div className="label" style={{ marginBottom: 10 }}>{t('adm.lic.importTitle')}</div>
+
+        <label
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => { e.preventDefault(); setDragging(false); takeCsv(e.dataTransfer.files?.[0]); }}
+          style={{ display: 'block', borderRadius: 16, padding: '26px 18px', textAlign: 'center', cursor: 'pointer',
+            border: `1.5px dashed ${dragging ? 'var(--brand)' : '#E0D5CB'}`,
+            background: dragging ? 'var(--peach)' : '#FDFAF7' }}>
+          <input type="file" accept=".csv,text/csv" style={{ display: 'none' }}
+            onChange={(e) => takeCsv(e.target.files?.[0])} />
+          <span aria-hidden="true" style={{ display: 'block', fontSize: 26, marginBottom: 6 }}>📄</span>
+          <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700 }}>{t('adm.lic.drop')}</span>
+          {csv && (
+            <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--brand-dark)', marginTop: 7 }}>
+              {csv.name} · {t(rows === 1 ? 'adm.lic.rowOne' : 'adm.lic.rowMany', { n: rows })}
+            </span>
+          )}
+        </label>
+
+        <div className="label" style={{ margin: '16px 0 8px' }}>{t('adm.lic.mapping')}</div>
+        <div className="cons-map cons-th" style={{ paddingBottom: 6 }}>
+          <div className="label">{t('adm.lic.hCol')}</div>
+          <div className="label">{t('adm.lic.hField')}</div>
+          <div className="label">{t('adm.lic.hSample')}</div>
+        </div>
+        {CSV_COLUMNS.map((c) => (
+          <div key={c.col} className="cons-map" style={{ borderTop: '1px solid var(--border)', padding: '9px 0' }}>
+            <code style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--brand-dark)' }}>{c.col}</code>
+            <div style={{ fontSize: 13 }}>{t(c.field)}</div>
+            <div style={{ fontSize: 12.5, color: 'var(--muted)', overflowWrap: 'anywhere' }}>{c.sample}</div>
+          </div>
+        ))}
+
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
+          <button type="button" className="btn" disabled={off} onClick={() => setCsvNote(true)}
+            style={{ width: 'auto', padding: '12px 18px', fontSize: 14,
+              opacity: off ? 0.5 : 1, cursor: off ? 'not-allowed' : 'pointer' }}>
+            {t('adm.lic.importN', { n: rows })}
+          </button>
+          <button type="button" className="btn ghost" onClick={() => setCsvNote(true)}
+            style={{ width: 'auto', padding: '12px 18px', fontSize: 14 }}>
+            {t('adm.lic.template')}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const pendingCard = () => panel(t('adm.lic.pending'), (
+    <>
+      {pendings.length === 0 && (
+        <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6 }}>{t('adm.lic.noPending')}</div>
+      )}
+      {pendings.map((p, i) => {
+        const ago = since(p.created_at);
+        const age = ageOf(p.player?.birthdate);
+        /* Sans email, la demande ne vient d'aucun parent : c'est le licencié
+           lui-même qui réclame son compte. */
+        const self = !p.email;
+        const who = p.player?.name || t('adm.lic.unknownAthlete');
+        const title = self
+          ? (age === null ? t('adm.lic.selfRequest') : t('adm.lic.selfRequestAge', { n: age }))
+          : `${who} ← ${p.email}`;
+        const sub = [self ? who : t('adm.lic.parentRequest'), ago ? t(ago.key, { n: ago.n }) : '']
+          .filter(Boolean).join(' · ');
+        return (
+          <div key={p.id} style={{ borderTop: i ? '1px solid var(--border)' : 'none', padding: '10px 0',
+            display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, overflowWrap: 'anywhere' }}>{title}</div>
+              {sub && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>{sub}</div>}
+            </div>
+            <button type="button" className="btn ghost" onClick={() => flash(t('adm.lic.validateSoon'))}
+              style={{ width: 'auto', padding: '8px 13px', fontSize: 12.5 }}>
+              {t('adm.lic.validate')}
+            </button>
+          </div>
+        );
+      })}
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginTop: 10 }}>
+        {t('adm.lic.pendingNote')}
+      </div>
+    </>
+  ));
+
+  const brandingCard = () => {
+    /* Les pastilles : l'accent du club, puis celui de chaque sport réellement
+       pratiqué ici — exactement ce que décrit la note en dessous. */
+    const seen = new Set();
+    const tones = [];
+    for (const tm of teams) {
+      const s = tm.sports;
+      if (!s?.accent_color || seen.has(s.accent_color)) continue;
+      seen.add(s.accent_color);
+      tones.push({ color: s.accent_color, label: sportName(s) });
+    }
+    return panel(t('adm.lic.branding'), (
+      <>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+          <span className="q" style={{ width: 48, height: 48, flex: '0 0 48px', borderRadius: 16,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
+            fontWeight: 800, fontSize: 16, background: club.accent_color || 'var(--brand)',
+            backgroundImage: club.logo_url ? `url(${club.logo_url})` : 'none',
+            backgroundSize: 'cover', backgroundPosition: 'center' }}>
+            {club.logo_url ? '' : initials(club.name)}
+          </span>
+          <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {tones.length === 0 && (
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{t('adm.lic.noSportTone')}</span>
+            )}
+            {tones.map((s) => (
+              <span key={s.color} title={s.label} style={{ width: 24, height: 24, borderRadius: '50%',
+                display: 'inline-block', background: s.color, border: '2px solid #fff',
+                boxShadow: '0 0 0 1px var(--border)' }} />
+            ))}
+          </span>
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6 }}>{t('adm.lic.brandingNote')}</div>
+      </>
+    ));
+  };
+
+  const documentsCard = () => panel(t('adm.nav.documents'), (
+    <>
+      {documents.length === 0 && (
+        <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6 }}>{t('adm.noDocuments')}</div>
+      )}
+      {documents.map((doc, i) => (
+        <div key={doc.id} style={{ borderTop: i ? '1px solid var(--border)' : 'none', padding: '9px 0' }}>
+          <a href={doc.url} target="_blank" rel="noreferrer"
+            style={{ fontSize: 13.5, fontWeight: 700, overflowWrap: 'anywhere' }}>{doc.name}</a>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
+            {[teamById[doc.team_id]?.name, dayText((doc.created_at || '').slice(0, 10))].filter(Boolean).join(' · ')}
+          </div>
+        </div>
+      ))}
+      {/* L'attestation n'est pas un fichier déposé : elle se fabrique au moment
+          où on la demande, donc elle ne peut pas figurer dans la liste. */}
+      <div style={{ borderTop: '1px solid var(--border)', padding: '9px 0 0', marginTop: documents.length ? 0 : 10 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 700 }}>{t('adm.lic.certificate')}</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>{t('adm.lic.onDemand')}</div>
+      </div>
+    </>
+  ));
 
   /* ---------- sections ---------- */
 
@@ -771,72 +1006,93 @@ export default function Club() {
     const roster = details[teamId];
     return (
       <>
-        {sectionHead('adm.nav.licences', (
-          <button type="button" className="btn ghost" style={{ width: 'auto', padding: '11px 16px', fontSize: 14 }}
-            onClick={() => setCsvNote((v) => !v)}>
-            {t('adm.importCsv')}
-          </button>
+        {sectionHead('adm.lic.title', (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="btn ghost" style={{ width: 'auto', padding: '11px 16px', fontSize: 14 }}
+              onClick={() => setCsvNote((v) => !v)}>
+              {t('adm.importCsv')}
+            </button>
+            <button type="button" className="btn" style={{ width: 'auto', padding: '11px 16px', fontSize: 14 }}
+              onClick={() => { setTeamName(''); document.getElementById('adm-newteam')?.focus(); }}>
+              {t('adm.newTeam')}
+            </button>
+          </div>
         ))}
 
         {csvNote && (
           <div className="card" style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.55 }}>{t('adm.importSoon')}</div>
         )}
 
-        <div className="cons-two">
-          <div className="card" style={{ marginBottom: 0 }}>
-            <div className="label" style={{ marginBottom: 8 }}>{t('club.createTeam')}</div>
-            <input className="input" value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder={t('club.teamNamePh')} />
-            <select className="input" value={teamSport} onChange={(e) => setTeamSport(e.target.value)}>
-              {sports.map((s) => <option key={s.id} value={s.id}>{s.icon} {sportName(s)}</option>)}
-            </select>
-            <button className="btn" disabled={busy} onClick={addTeam}>{busy ? '…' : t('club.doCreateTeam')}</button>
+        <div className="cons-grid">
+          {/* ============ Colonne principale ============ */}
+          <div style={{ display: 'grid', gap: 14 }}>
+            {csvCard()}
+
+            <div className="cons-two">
+              <div className="card" style={{ marginBottom: 0 }}>
+                <div className="label" style={{ marginBottom: 8 }}>{t('club.createTeam')}</div>
+                <input id="adm-newteam" className="input" value={teamName}
+                  onChange={(e) => setTeamName(e.target.value)} placeholder={t('club.teamNamePh')} />
+                <select className="input" value={teamSport} onChange={(e) => setTeamSport(e.target.value)}>
+                  {sports.map((s) => <option key={s.id} value={s.id}>{s.icon} {sportName(s)}</option>)}
+                </select>
+                <button className="btn" disabled={busy} onClick={addTeam}>{busy ? '…' : t('club.doCreateTeam')}</button>
+              </div>
+
+              <div className="card" style={{ marginBottom: 0 }}>
+                <div className="label" style={{ marginBottom: 6 }}>{t('club.teamConcerned')}</div>
+                <select className="input" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
+                  {teams.map((tm) => <option key={tm.id} value={tm.id}>{tm.sports?.icon} {tm.name} · {sportName(tm.sports)}</option>)}
+                </select>
+                <div style={{ display: 'flex', gap: 7 }}>
+                  <input className="input" style={{ marginBottom: 0, flex: 1, minWidth: 0 }} value={pFirst}
+                    onChange={(e) => setPFirst(e.target.value)} placeholder={t('club.firstNamePh')} />
+                  <input className="input" style={{ marginBottom: 0, flex: 1, minWidth: 0 }} value={pLast}
+                    onChange={(e) => setPLast(e.target.value)} placeholder={t('club.lastNamePh')} />
+                </div>
+                <button className="btn" style={{ marginTop: 9 }} disabled={busy} onClick={addPlayer}>{t('club.addMember')}</button>
+              </div>
+            </div>
+
+            {teamId && (
+              <div className="card" style={{ marginBottom: 0 }}>
+                <div className="label" style={{ marginBottom: 10 }}>
+                  {t('club.membersOf', { name: teamById[teamId]?.name || t('club.theTeam') })}
+                </div>
+                {(!roster || roster.loading) && (
+                  <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('common.loading')}</div>
+                )}
+                {roster && !roster.loading && roster.athletes.length === 0 && (
+                  <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('club.noMembers')}</div>
+                )}
+                {roster && !roster.loading && roster.athletes.map((a) => (
+                  <div key={a.id} style={{ borderTop: '1px solid var(--border)', padding: '11px 0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700, fontSize: 14 }}>{a.name}</span>
+                      <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>{accountText(a)}</span>
+                      {statusChip(a.linked)}
+                    </div>
+                    <div style={{ display: 'flex', gap: 7, marginTop: 7 }}>
+                      <input className="input" style={{ marginBottom: 0, flex: 1, minWidth: 0, maxWidth: 360 }}
+                        value={parentEmail[a.id] || ''}
+                        onChange={(e) => setParentEmail((m) => ({ ...m, [a.id]: e.target.value }))}
+                        placeholder={t('club.parentEmailPh')} />
+                      <button className="btn ghost" style={{ width: 'auto', padding: '0 14px' }} disabled={busy}
+                        onClick={() => linkParent(a.id, teamId)}>{t('club.link')}</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          <div className="card" style={{ marginBottom: 0 }}>
-            <div className="label" style={{ marginBottom: 6 }}>{t('club.teamConcerned')}</div>
-            <select className="input" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
-              {teams.map((tm) => <option key={tm.id} value={tm.id}>{tm.sports?.icon} {tm.name} · {sportName(tm.sports)}</option>)}
-            </select>
-            <div style={{ display: 'flex', gap: 7 }}>
-              <input className="input" style={{ marginBottom: 0, flex: 1, minWidth: 0 }} value={pFirst}
-                onChange={(e) => setPFirst(e.target.value)} placeholder={t('club.firstNamePh')} />
-              <input className="input" style={{ marginBottom: 0, flex: 1, minWidth: 0 }} value={pLast}
-                onChange={(e) => setPLast(e.target.value)} placeholder={t('club.lastNamePh')} />
-            </div>
-            <button className="btn" style={{ marginTop: 9 }} disabled={busy} onClick={addPlayer}>{t('club.addMember')}</button>
+          {/* ============ Colonne latérale ============ */}
+          <div style={{ display: 'grid', gap: 14 }}>
+            {pendingCard()}
+            {brandingCard()}
+            {documentsCard()}
           </div>
         </div>
-
-        {teamId && (
-          <div className="card" style={{ marginTop: 14 }}>
-            <div className="label" style={{ marginBottom: 10 }}>
-              {t('club.membersOf', { name: teamById[teamId]?.name || t('club.theTeam') })}
-            </div>
-            {(!roster || roster.loading) && (
-              <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('common.loading')}</div>
-            )}
-            {roster && !roster.loading && roster.athletes.length === 0 && (
-              <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('club.noMembers')}</div>
-            )}
-            {roster && !roster.loading && roster.athletes.map((a) => (
-              <div key={a.id} style={{ borderTop: '1px solid var(--border)', padding: '11px 0' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <span style={{ fontWeight: 700, fontSize: 14 }}>{a.name}</span>
-                  <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>{accountText(a)}</span>
-                  {statusChip(a.linked)}
-                </div>
-                <div style={{ display: 'flex', gap: 7, marginTop: 7 }}>
-                  <input className="input" style={{ marginBottom: 0, flex: 1, minWidth: 0, maxWidth: 360 }}
-                    value={parentEmail[a.id] || ''}
-                    onChange={(e) => setParentEmail((m) => ({ ...m, [a.id]: e.target.value }))}
-                    placeholder={t('club.parentEmailPh')} />
-                  <button className="btn ghost" style={{ width: 'auto', padding: '0 14px' }} disabled={busy}
-                    onClick={() => linkParent(a.id, teamId)}>{t('club.link')}</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </>
     );
   }
