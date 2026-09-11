@@ -32,6 +32,7 @@ const COPY = {
     upTo: 'jusqu’à {n} licenciés',
     choose: 'Commencer l’essai',
     rgpd: 'Vos données et celles de vos enfants sont hébergées en Europe et protégées conformément au RGPD.',
+    footerSteps: 'Premiers pas',
     footerPrivacy: 'Confidentialité',
     footerTerms: 'Conditions d’utilisation',
     footerDelete: 'Supprimer mon compte',
@@ -64,6 +65,7 @@ const COPY = {
     upTo: 'up to {n} members',
     choose: 'Start the trial',
     rgpd: 'Your data and your children’s data are hosted in Europe and protected in accordance with GDPR.',
+    footerSteps: 'First steps',
     footerPrivacy: 'Privacy',
     footerTerms: 'Terms of use',
     footerDelete: 'Delete my account',
@@ -160,6 +162,7 @@ export default function Bienvenue() {
 
         {/* Footer */}
         <div style={{ borderTop: '1px solid var(--border)', marginTop: 20, paddingTop: 18, display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center', fontSize: 13 }}>
+          <a href="#" onClick={(e) => { e.preventDefault(); router.push('/premiers-pas'); }}>{c.footerSteps}</a>
           <a href="#" onClick={(e) => { e.preventDefault(); router.push('/confidentialite'); }}>{c.footerPrivacy}</a>
           <a href="#" onClick={(e) => { e.preventDefault(); router.push('/cgu'); }}>{c.footerTerms}</a>
           <a href="#" onClick={(e) => { e.preventDefault(); router.push('/suppression-compte'); }}>{c.footerDelete}</a>
