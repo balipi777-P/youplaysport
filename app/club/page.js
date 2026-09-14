@@ -144,6 +144,7 @@ export default function Club() {
   const [documents, setDocuments] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [pendings, setPendings] = useState([]);
+  const [linkBusy, setLinkBusy] = useState(''); // link_id en cours de décision
   const [csv, setCsv] = useState(null);   // {name, rows} du fichier déposé
   const [dragging, setDragging] = useState(false);
   const [memberCount, setMemberCount] = useState(0);
@@ -260,7 +261,9 @@ export default function Club() {
     }
 
     return roster.map((p) => {
-      const mine = links.filter((l) => l.player_id === p.id);
+      /* Un rattachement refusé n'existe plus pour le club : il ne compte ni
+         comme parent, ni comme demande en attente. */
+      const mine = links.filter((l) => l.player_id === p.id && (l.status || 'active') !== 'rejected');
       /* « À valider » n'est plus une déduction : un rattachement demandé par un
          parent reste en attente jusqu'à ce que le club le valide. Un licencié
          n'est actif que si au moins un de ses liens l'est — ou s'il a son
@@ -337,25 +340,17 @@ export default function Club() {
           supabase.from('seasons').select('id, name, start_date, end_date').eq('club_id', c.id).order('start_date'),
           supabase.from('documents').select('id, name, url, team_id, created_at').eq('club_id', c.id).order('created_at', { ascending: false }),
           supabase.from('support_tickets').select('id, subject, status, priority, created_at').eq('club_id', c.id).order('created_at', { ascending: false }),
-          supabase.from('pending_links').select('id, target_type, target_ref, email, created_at, expires_at')
-            .eq('club_id', c.id).order('created_at', { ascending: false }),
+          /* Les demandes de rattachement traversent la RLS par une fonction
+             security definer : elle ne rend que celles des clubs que l'on
+             administre, et joint au passage le parent, que app_users nous
+             interdirait de lire directement. */
+          supabase.schema('yps').rpc('pending_links_for_admin'),
         ]);
         setSeasons(se.data || []);
         setDocuments(doc.data || []);
         setTickets(tk.data || []);
-
-        /* Demandes en attente : on écarte celles qui ont expiré, puis on résout
-           le licencié visé en un seul aller-retour. */
-        const rows = (pl.data || []).filter((r) => !r.expires_at || new Date(r.expires_at) > new Date());
-        const refs = [...new Set(rows.map((r) => r.target_ref).filter(Boolean))];
-        const who = {};
-        if (refs.length) {
-          const { data: ps } = await supabase.from('players').select('id, first_name, last_name, birthdate').in('id', refs);
-          for (const p of ps || []) {
-            who[p.id] = { name: `${p.first_name} ${p.last_name || ''}`.trim(), birthdate: p.birthdate };
-          }
-        }
-        setPendings(rows.map((r) => ({ ...r, player: who[r.target_ref] || null })));
+        if (pl.error) console.error('pending_links_for_admin', pl.error);
+        setPendings(pl.data || []);
       }
       setReady(true);
     })();
@@ -707,34 +702,67 @@ export default function Club() {
     );
   };
 
+  /**
+   * Tranche une demande de rattachement. Dans les deux cas la ligne quitte la
+   * liste : validée ou refusée, elle n'est plus en attente. Et la section
+   * Athlètes est vidée, car elle garde en cache l'état d'avant la décision.
+   */
+  async function decideLink(linkId, approve) {
+    if (linkBusy) return;
+    setLinkBusy(linkId);
+    const fn = approve ? 'validate_child_link' : 'reject_child_link';
+    const { error } = await supabase.schema('yps').rpc(fn, { p_link: linkId });
+    setLinkBusy('');
+    if (error) {
+      console.error(fn, error);
+      setOk('');
+      setErr(t('adm.lic.linkFailed'));
+      return;
+    }
+    setPendings((list) => list.filter((p) => p.link_id !== linkId));
+    setEveryone(null);
+    flash(t(approve ? 'adm.lic.linkValidated' : 'adm.lic.linkRejected'));
+  }
+
   const pendingCard = () => panel(t('adm.lic.pending'), (
     <>
       {pendings.length === 0 && (
         <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6 }}>{t('adm.lic.noPending')}</div>
       )}
       {pendings.map((p, i) => {
-        const ago = since(p.created_at);
-        const age = ageOf(p.player?.birthdate);
+        const ago = since(p.requested_at);
+        const age = ageOf(p.birthdate);
         /* Sans email, la demande ne vient d'aucun parent : c'est le licencié
            lui-même qui réclame son compte. */
-        const self = !p.email;
-        const who = p.player?.name || t('adm.lic.unknownAthlete');
+        const self = !p.parent_email;
+        const who = `${p.first_name || ''} ${p.last_name || ''}`.trim() || t('adm.lic.unknownAthlete');
         const title = self
           ? (age === null ? t('adm.lic.selfRequest') : t('adm.lic.selfRequestAge', { n: age }))
-          : `${who} ← ${p.email}`;
-        const sub = [self ? who : t('adm.lic.parentRequest'), ago ? t(ago.key, { n: ago.n }) : '']
-          .filter(Boolean).join(' · ');
+          : `${who} ← ${p.parent_email}`;
+        const sub = [
+          self ? who : t('adm.lic.parentRequest'),
+          [p.club_name, p.team_name].filter(Boolean).join(' · '),
+          ago ? t(ago.key, { n: ago.n }) : '',
+        ].filter(Boolean).join(' · ');
+        const wait = linkBusy === p.link_id;
         return (
-          <div key={p.id} style={{ borderTop: i ? '1px solid var(--border)' : 'none', padding: '10px 0',
-            display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 700, overflowWrap: 'anywhere' }}>{title}</div>
-              {sub && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>{sub}</div>}
+          <div key={p.link_id} style={{ borderTop: i ? '1px solid var(--border)' : 'none', padding: '10px 0' }}>
+            <div style={{ fontSize: 13.5, fontWeight: 700, overflowWrap: 'anywhere' }}>{title}</div>
+            {sub && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>{sub}</div>}
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <button type="button" className="btn" disabled={wait}
+                onClick={() => decideLink(p.link_id, true)}
+                style={{ width: 'auto', padding: '8px 13px', fontSize: 12.5,
+                  opacity: wait ? 0.5 : 1, cursor: wait ? 'not-allowed' : 'pointer' }}>
+                {t('adm.lic.validate')}
+              </button>
+              <button type="button" className="btn ghost" disabled={wait}
+                onClick={() => decideLink(p.link_id, false)}
+                style={{ width: 'auto', padding: '8px 13px', fontSize: 12.5,
+                  opacity: wait ? 0.5 : 1, cursor: wait ? 'not-allowed' : 'pointer' }}>
+                {t('adm.lic.reject')}
+              </button>
             </div>
-            <button type="button" className="btn ghost" onClick={() => flash(t('adm.lic.validateSoon'))}
-              style={{ width: 'auto', padding: '8px 13px', fontSize: 12.5 }}>
-              {t('adm.lic.validate')}
-            </button>
           </div>
         );
       })}
