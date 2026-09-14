@@ -168,6 +168,18 @@ export default function Club() {
 
   const flash = (msg) => { setOk(msg); setErr(''); setTimeout(() => setOk(''), 3500); };
 
+  /**
+   * File des demandes de rattachement. Elle traverse la RLS par une fonction
+   * security definer : celle-ci ne rend que les demandes des clubs que l'on
+   * administre, et joint au passage le parent, que la RLS d'app_users
+   * interdirait au dirigeant de lire directement.
+   */
+  const loadPendings = useCallback(async () => {
+    const { data, error } = await supabase.schema('yps').rpc('pending_links_for_admin');
+    if (error) { console.error('pending_links_for_admin', error); return; }
+    setPendings(data || []);
+  }, []);
+
   /** Licenciés = count sur players ; coachs = distinct coach_user_id. */
   const loadStats = useCallback(async (clubId, teamRows) => {
     const { count } = await supabase.from('players').select('id', { count: 'exact', head: true }).eq('club_id', clubId);
@@ -336,25 +348,19 @@ export default function Club() {
       if (sp && sp[0]) setTeamSport(sp[0].id);
       if (c) {
         await loadTeams(c.id);
-        const [se, doc, tk, pl] = await Promise.all([
+        const [se, doc, tk] = await Promise.all([
           supabase.from('seasons').select('id, name, start_date, end_date').eq('club_id', c.id).order('start_date'),
           supabase.from('documents').select('id, name, url, team_id, created_at').eq('club_id', c.id).order('created_at', { ascending: false }),
           supabase.from('support_tickets').select('id, subject, status, priority, created_at').eq('club_id', c.id).order('created_at', { ascending: false }),
-          /* Les demandes de rattachement traversent la RLS par une fonction
-             security definer : elle ne rend que celles des clubs que l'on
-             administre, et joint au passage le parent, que app_users nous
-             interdirait de lire directement. */
-          supabase.schema('yps').rpc('pending_links_for_admin'),
+          loadPendings(),
         ]);
         setSeasons(se.data || []);
         setDocuments(doc.data || []);
         setTickets(tk.data || []);
-        if (pl.error) console.error('pending_links_for_admin', pl.error);
-        setPendings(pl.data || []);
       }
       setReady(true);
     })();
-  }, [router, loadTeams]);
+  }, [router, loadTeams, loadPendings]);
 
   /* Première équipe dépliée par défaut, tant que l'utilisateur n'a rien touché. */
   const [touched, setTouched] = useState(false);
@@ -716,6 +722,11 @@ export default function Club() {
     if (error) {
       console.error(fn, error);
       setOk('');
+      const m = `${error.message || ''}`;
+      if (m.includes('not_admin')) { setErr(t('adm.lic.notAdmin')); return; }
+      /* La demande a déjà été tranchée ailleurs : notre liste est en retard,
+         on la reprend telle qu'elle est vraiment. */
+      if (m.includes('link_not_found')) { setErr(t('adm.lic.linkGone')); await loadPendings(); return; }
       setErr(t('adm.lic.linkFailed'));
       return;
     }
@@ -739,8 +750,11 @@ export default function Club() {
         const title = self
           ? (age === null ? t('adm.lic.selfRequest') : t('adm.lic.selfRequestAge', { n: age }))
           : `${who} ← ${p.parent_email}`;
+        /* Le titre d'une demande autonome ne nomme pas l'athlète : on le remet
+           ici, sinon la ligne ne dit pas de qui il s'agit. */
         const sub = [
-          self ? who : t('adm.lic.parentRequest'),
+          t('adm.lic.parentRequest'),
+          self ? who : '',
           [p.club_name, p.team_name].filter(Boolean).join(' · '),
           ago ? t(ago.key, { n: ago.n }) : '',
         ].filter(Boolean).join(' · ');
