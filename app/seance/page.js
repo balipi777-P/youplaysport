@@ -69,6 +69,14 @@ export default function Seance() {
   const [picked, setPicked] = useState([]); // libellés sélectionnés, pas encore validés
   const [skillCustom, setSkillCustom] = useState('');
   const [queued, setQueued] = useState([]); // [{label, axis}] écrits à la publication
+  /* Validation des compétences une fois la séance publiée (id connu). */
+  const [publishedId, setPublishedId] = useState(null);
+  const [vAxis, setVAxis] = useState('');
+  const [vLabel, setVLabel] = useState('');
+  const [vPlayers, setVPlayers] = useState([]);
+  const [vBusy, setVBusy] = useState(false);
+  const [vErr, setVErr] = useState('');
+  const [vOk, setVOk] = useState('');
   const [axes, setAxes] = useState({}); // {key: comment}
   const [challenges, setChallenges] = useState([]);
   const [defi, setDefi] = useState({ name: '', home_exercise: '', competence: '', tip: '' });
@@ -124,6 +132,7 @@ export default function Seance() {
     setTeamPlayers(list);
     setPresence(Object.fromEntries(list.map((p) => [p.id, 'present']))); // présents par défaut
     setPicked([]); setQueued([]); setSkillCustom('');
+    setPublishedId(null); setVAxis(''); setVLabel(''); setVPlayers([]); setVErr(''); setVOk('');
 
     if (!tm?.sport_id) { setFrameworks([]); setChallenges([]); setThemes([]); return; }
 
@@ -197,6 +206,30 @@ export default function Seance() {
     setPicked([]); setSkillCustom('');
   }
 
+  function toggleVPlayer(id) {
+    setVPlayers((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]));
+  }
+
+  /* Validation directe dans le carnet des joueurs cochés (RPC yps.validate_skills). */
+  async function validateSkills() {
+    setVErr(''); setVOk('');
+    if (!publishedId || !vAxis || !vLabel.trim() || !vPlayers.length) return;
+    setVBusy(true);
+    try {
+      const { data, error } = await supabase.schema('yps').rpc('validate_skills', {
+        p_session: publishedId, p_axis: vAxis, p_label: vLabel.trim(), p_player_ids: vPlayers,
+      });
+      if (error) throw error;
+      setVOk(t('sea.vOk', { n: typeof data === 'number' ? data : vPlayers.length }));
+      setVPlayers([]); setVLabel('');
+    } catch (e) {
+      console.error('[validate_skills]', e);
+      const m = String(e?.message || '');
+      const code = ['not_authorized', 'label_required', 'session_not_found'].find((c) => m.includes(c));
+      setVErr(code ? t(`sea.vErr.${code}`) : t('sea.vErr.other'));
+    } finally { setVBusy(false); }
+  }
+
   function applyChallenge(c) {
     setDefi({
       name: c.name || '', home_exercise: c.home_exercise || '',
@@ -247,6 +280,7 @@ export default function Seance() {
         }
       }
       setOk(t('sea.published'));
+      setPublishedId(sid); setVAxis(''); setVLabel(''); setVPlayers([]); setVErr(''); setVOk('');
       setTheme(''); setThemeCustom(''); setAxes({}); setQueued([]); setPicked([]); setSkillCustom('');
       setDefi({ name: '', home_exercise: '', competence: '', tip: '' }); setMot(''); setObjectif('');
       setStartTime(''); setEndTime('');
@@ -533,6 +567,45 @@ export default function Seance() {
               placeholder={t('sea.objectivePh')} />
             <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>{t('sea.positiveNote')}</div>
           </div>
+
+          {/* ===== Valider les compétences (séance publiée) ===== */}
+          {publishedId && (
+            <div className="card" id="valider-competences">
+              {step('✓', t('sea.vTitle'))}
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>{t('sea.vHint')}</div>
+              <div className="label" style={{ marginBottom: 6 }}>{t('sea.vAxis')}</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 12 }}>
+                {AXIS_KEYS.map((k) => (
+                  <Chip key={k} on={vAxis === k} onClick={() => setVAxis(k)}>
+                    {`${AXIS_EMOJI[k]} ${t(`axis.long.${k}`)}`}
+                  </Chip>
+                ))}
+              </div>
+              <div className="label" style={{ marginBottom: 6 }}>{t('sea.vLabel')}</div>
+              <input className="input" list="v-competences" value={vLabel}
+                onChange={(e) => setVLabel(e.target.value)} placeholder={t('sea.skillLabelPh')} />
+              <datalist id="v-competences">
+                {[...new Set(challenges.map((c) => c.competence).filter(Boolean))].map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
+              <div className="label" style={{ margin: '12px 0 6px' }}>{t('sea.vPlayers')}</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 12 }}>
+                {teamPlayers.map((p) => (
+                  <Chip key={p.id} on={vPlayers.includes(p.id)} onClick={() => toggleVPlayer(p.id)}>
+                    {p.first_name || p.name || p.id.slice(0, 6)}
+                  </Chip>
+                ))}
+              </div>
+              <button type="button" className="btn" style={{ marginBottom: 0 }}
+                disabled={vBusy || !vAxis || !vLabel.trim() || !vPlayers.length}
+                onClick={validateSkills}>
+                {vBusy ? t('sea.vBusy') : t('sea.vCta')}
+              </button>
+              {vOk && <p style={{ color: GREEN.ink, fontWeight: 700, fontSize: 13, margin: '10px 0 0' }}>{vOk}</p>}
+              {vErr && <p style={{ color: '#C0392B', fontSize: 13, margin: '10px 0 0' }}>{vErr}</p>}
+            </div>
+          )}
 
           {/* ===== Publication ===== */}
           <div className="card" style={{ background: 'var(--peach)', border: 'none' }}>
