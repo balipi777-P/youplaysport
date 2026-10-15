@@ -593,7 +593,7 @@ export default function Seance() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 12 }}>
                 {teamPlayers.map((p) => (
                   <Chip key={p.id} on={vPlayers.includes(p.id)} onClick={() => toggleVPlayer(p.id)}>
-                    {p.first_name || p.name || p.id.slice(0, 6)}
+                    {p.first_name} {p.last_name || ''}
                   </Chip>
                 ))}
               </div>
