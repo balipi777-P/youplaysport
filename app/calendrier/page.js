@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { loadMyChildren } from '../../lib/children';
 import { useT } from '../../lib/i18n';
+import { getStored, KEY_SPACE, KEY_TEAM, KEY_CLUB } from '../../lib/spaces';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 
 /* Calendrier, sur un seul mois, dans la même grille pour tout le monde.
@@ -181,8 +182,13 @@ export default function Calendrier() {
       const { data: mine } = await supabase.from('players').select('id').eq('user_id', uid);
       const myIds = (mine || []).map((p) => p.id);
       const children = await loadMyChildren();
-      setKids(children);
-      setNavRole(children.length
+      const sp0 = getStored(KEY_SPACE);
+      /* Seuls les licenciés de l'espace courant : athlète = lui-même, parent = ses enfants. */
+      setKids(sp0 === 'athlete' ? children.filter((c) => myIds.includes(c.id))
+        : sp0 === 'parent' ? children.filter((c) => !myIds.includes(c.id))
+        : (sp0 === 'coach' || sp0 === 'admin') ? [] : children);
+      const curSpace = getStored(KEY_SPACE);
+      setNavRole(['admin', 'coach', 'parent', 'athlete'].includes(curSpace) ? curSpace : children.length
         ? (children.every((c) => myIds.includes(c.id)) ? 'athlete' : 'parent')
         : ((ms || []).some((r) => r.role === 'admin' || r.role === 'coach') ? 'coach' : 'parent'));
 
@@ -198,7 +204,13 @@ export default function Calendrier() {
           .select('id, name, club_id, clubs(name)').in('club_id', adminClubs.map((r) => r.club_id));
         myTeams = myTeams.concat(at || []);
       }
-      setCoachTeams(Object.values(Object.fromEntries(myTeams.map((tm) => [tm.id, tm]))));
+      let teamsAll = Object.values(Object.fromEntries(myTeams.map((tm) => [tm.id, tm])));
+      if (sp0 === 'coach' && teamsAll.some((tm) => tm.id === getStored(KEY_TEAM))) {
+        teamsAll = teamsAll.filter((tm) => tm.id === getStored(KEY_TEAM));
+      } else if (sp0 === 'admin' && teamsAll.some((tm) => tm.club_id === getStored(KEY_CLUB))) {
+        teamsAll = teamsAll.filter((tm) => tm.club_id === getStored(KEY_CLUB));
+      } else if (sp0 === 'parent' || sp0 === 'athlete') teamsAll = [];
+      setCoachTeams(teamsAll);
       setReady(true);
     })();
   }, [router]);

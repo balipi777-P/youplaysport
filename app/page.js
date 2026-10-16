@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../lib/supabaseClient';
 import { loadMyChildren, pickChild, setStoredChildId } from '../lib/children';
+import { getStored, KEY_CLUB, KEY_TEAM, fetchMySpaces, validStoredSpace } from '../lib/spaces';
 import { useT, LangToggle } from '../lib/i18n';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from './components/BottomNav';
 import ParentJournal from './components/ParentJournal';
@@ -28,7 +29,7 @@ export default function Home() {
   const [attendanceAt, setAttendanceAt] = useState(null);
   const [streak, setStreak] = useState(0);
   const [skills, setSkills] = useState([]);
-  const [isSA, setIsSA] = useState(false);
+  const [space, setSpace] = useState(''); // espace courant ('' = inconnu : ancien comportement)
   const [err, setErr] = useState('');
   /* Vue athlète : fiches dont l'utilisateur est lui-même le licencié, et les données
      propres à cette vue (prochaine convocation, carnet complet). */
@@ -231,13 +232,19 @@ export default function Home() {
     if (uid && (mem || []).some((m) => m.role === 'admin' || m.role === 'coach')) {
       await loadStaffData(mem || [], uid);
     }
-    const kids = await loadMyChildren();
+    /* Espace courant (my_spaces). Sans lui, on retombe sur l'ancien comportement. */
+    const sd = await fetchMySpaces();
+    const sp = sd ? validStoredSpace(sd) : '';
+    setSpace(sp);
+    const ownIds = (own || []).map((r) => r.id);
+    const all = await loadMyChildren();
+    const kids = sp === 'athlete' ? all.filter((c) => ownIds.includes(c.id))
+      : sp === 'parent' ? all.filter((c) => !ownIds.includes(c.id))
+      : all;
     setChildren(kids);
-    const chosen = pickChild(kids);
+    const chosen = (sp === 'admin' || sp === 'coach') ? null : pickChild(kids);
     await loadChildData(chosen);
-    const { data: sa } = await supabase.rpc('sa_is_admin');
-    setIsSA(!!sa);
-    return { mem: mem || [], hasChild: !!chosen };
+    return { mem: mem || [], hasChild: all.length > 0, spaces: sd, space: sp };
   }, [loadChildData, loadStaffData]);
 
   useEffect(() => {
@@ -246,6 +253,7 @@ export default function Home() {
       if (!data.session) { router.replace('/login'); return; }
       const res = await load();
       if (res.mem.length === 0 && !res.hasChild) { router.replace('/onboarding'); return; }
+      if (res.spaces && !res.space) { router.replace('/choisir-espace'); return; }
       setReady(true);
     })();
   }, [router, load]);
@@ -284,7 +292,12 @@ export default function Home() {
 
   if (!ready) return <div className="wrap"><p style={{ color: 'var(--muted)' }}>{t('common.loading')}</p></div>;
 
-  const staff = memberships.find((m) => m.role === 'admin' || m.role === 'coach');
+  const wantStaff = !space || space === 'admin' || space === 'coach';
+  const curClub = getStored(KEY_CLUB);
+  const staff = !wantStaff ? undefined
+    : (space === 'admin'
+      ? memberships.find((m) => m.role === 'admin' && m.club_id === curClub) || memberships.find((m) => m.role === 'admin')
+      : memberships.find((m) => m.role === 'admin' || m.role === 'coach'));
 
   /* L'utilisateur consulte sa propre fiche : accueil au « tu ». */
   const isAthlete = !!player && myPlayerIds.includes(player.id);
@@ -298,7 +311,7 @@ export default function Home() {
   /* Onglets de la barre basse : ils suivent la vue réellement affichée, pas le rôle
      le plus élevé. Un compte multi-rôles (admin + parent) voit son journal, donc la
      nav parent ; l'accès staff reste les boutons de l'Espace Dirigeant plus bas. */
-  const navRole = player ? (isAthlete ? 'athlete' : 'parent') : (staff ? 'coach' : 'parent');
+  const navRole = space || (player ? (isAthlete ? 'athlete' : 'parent') : (staff ? 'coach' : 'parent'));
 
   /* Date du jour : « MERCREDI 10 SEPTEMBRE 2026 » / « WEDNESDAY 10 SEPTEMBER 2026 ». */
   const todayLabel = new Date()
@@ -312,7 +325,13 @@ export default function Home() {
      de langue ne relance aucune requête. */
   const weekdayName = (d) => new Date(Date.UTC(2024, 0, 7 + d))
     .toLocaleDateString(lang === 'en' ? 'en-GB' : 'fr-FR', { weekday: 'long', timeZone: 'UTC' });
-  const coachTeams = staffTeams.map((tm) => ({
+  const curTeam = getStored(KEY_TEAM);
+  const scopedTeams = space === 'coach' && staffTeams.some((tm) => tm.id === curTeam)
+    ? staffTeams.filter((tm) => tm.id === curTeam)
+    : space === 'admin' && staffTeams.some((tm) => tm.club_id === curClub)
+      ? staffTeams.filter((tm) => tm.club_id === curClub)
+      : staffTeams;
+  const coachTeams = scopedTeams.map((tm) => ({
     ...tm,
     sportName: sportName(tm.sports),
     days: (tm.weekdays || []).map(weekdayName).join(', '),
@@ -403,12 +422,6 @@ export default function Home() {
             onManageClub={staff.role === 'admin' ? () => router.push('/club') : null}
           />
         </>
-      )}
-
-      {isSA && (
-        <div style={{ marginTop: 22 }}>
-          <button className="btn" style={{ background: '#1F1C17' }} onClick={() => router.push('/superadmin')}>{t('home.superadmin')}</button>
-        </div>
       )}
 
       {/* ---- Vue Parent/Athlète rattaché à un club mais sans enfant/fiche encore ---- */}

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
+import { getStored, KEY_TEAM } from '../../lib/spaces';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 
 /* Écran Séance du coach : de la saisie jusqu'au compte rendu publié.
@@ -105,6 +106,7 @@ export default function Seance() {
       const wanted = new URLSearchParams(window.location.search).get('team');
       const pre = uniq.find((tm) => tm.id === wanted);
       if (pre) setTeamId(pre.id);
+      else if (uniq.some((tm) => tm.id === getStored(KEY_TEAM))) setTeamId(getStored(KEY_TEAM));
       else if (uniq[0]) setTeamId(uniq[0].id);
       setReady(true);
     })();

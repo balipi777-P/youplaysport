@@ -17,6 +17,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
+import { getStored, KEY_CLUB } from '../../lib/spaces';
 
 /* Les 8 entrées de la barre latérale. Chacune ouvre une section réellement
    adossée à une table : rien ne mène à un écran vide sans explication. */
@@ -340,8 +341,10 @@ export default function Club() {
       if (!data.session) { router.replace('/login'); return; }
       const { data: mem } = await supabase.from('memberships')
         .select('club_id, clubs(id, name, join_code, created_at, trial_ends_at, logo_url, accent_color, plan_key, status)')
-        .eq('role', 'admin').limit(1);
-      const c = mem && mem[0] ? mem[0].clubs : null;
+        .eq('role', 'admin');
+      /* Club courant choisi dans le sélecteur d'espace, sinon le premier. */
+      const cur = (mem || []).find((m) => m.club_id === getStored(KEY_CLUB)) || (mem && mem[0]);
+      const c = cur ? cur.clubs : null;
       setClub(c);
       const { data: sp } = await supabase.from('sports').select('id, name_fr, name_en, icon').order('name_fr');
       setSports(sp || []);

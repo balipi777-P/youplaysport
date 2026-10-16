@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
+import { getStored, KEY_TEAM } from '../../lib/spaces';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 
 /* Écran Événements du coach : poser un match et convoquer le groupe.
@@ -83,7 +84,8 @@ export default function Evenements() {
       /* ?team=… : l'accueil coach ouvre l'écran sur un groupe précis. */
       const wanted = new URLSearchParams(window.location.search).get('team');
       const pre = uniq.find((tm) => tm.id === wanted);
-      setTeamId(pre ? pre.id : (uniq[0]?.id || ''));
+      const stored = uniq.find((tm) => tm.id === getStored(KEY_TEAM));
+      setTeamId(pre ? pre.id : (stored?.id || uniq[0]?.id || ''));
       setReady(true);
     })();
   }, [router]);

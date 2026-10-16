@@ -1,5 +1,6 @@
 import './globals.css';
 import { LangProvider } from '../lib/i18n';
+import SpaceBar from './components/SpaceBar';
 
 export const metadata = {
   title: 'YouPlaySport',
@@ -23,7 +24,7 @@ export default function RootLayout({ children }) {
           href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
         />
       </head>
-      <body><LangProvider>{children}</LangProvider></body>
+      <body><LangProvider><SpaceBar />{children}</LangProvider></body>
     </html>
   );
 }

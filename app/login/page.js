@@ -51,7 +51,7 @@ export default function LoginPage() {
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        router.push('/');
+        router.push('/choisir-espace');
       }
     } catch (e) {
       setErr(e.message || t('common.error'));
