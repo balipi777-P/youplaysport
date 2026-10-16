@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
+import Icon from './Icon';
 import {
   fetchMySpaces, listSpaces, validStoredSpace, contextOptions, enterSpace,
   getStored, setStored, clearSpaceStorage, CONTEXT_KEY, SPACE_HOME, KEY_SPACE,
@@ -65,25 +66,37 @@ export default function SpaceBar() {
   }
 
   const opts = space ? contextOptions(space, data) : [];
-  const sel = { border: '1px solid var(--border)', borderRadius: 10, padding: '6px 8px', fontSize: 12.5,
-    fontWeight: 700, fontFamily: 'inherit', background: '#fff', color: '#57534A', maxWidth: '100%', minWidth: 0 };
+  const sel = { appearance: 'none', WebkitAppearance: 'none', border: '1px solid var(--border)', borderRadius: 999,
+    padding: '6px 28px 6px 12px', fontSize: 12.5, fontWeight: 800, fontFamily: 'inherit',
+    background: '#fff', color: 'var(--brand-dark)', maxWidth: '100%', minWidth: 0, cursor: 'pointer' };
+  const chev = { position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)',
+    pointerEvents: 'none', color: 'var(--brand-dark)' };
+  const wrapSel = { position: 'relative', display: 'inline-flex', alignItems: 'center', minWidth: 0, maxWidth: '100%' };
 
   return (
-    <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'var(--bg, #FAF3ED)',
+    <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'var(--paper)',
       borderBottom: '1px solid var(--border)' }}>
       <div style={{ maxWidth: 460, margin: '0 auto', padding: '7px 16px', display: 'flex',
         alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <select aria-label={t('space.switch')} value={space} onChange={onSpace} style={sel}
-          data-key={KEY_SPACE}>
-          {!space && <option value="">{t('space.pick')}</option>}
-          {spaces.map((k) => <option key={k} value={k}>{t(`space.${k}`)}</option>)}
-        </select>
+        {spaces.length > 1 && (
+          <span style={wrapSel}>
+            <select aria-label={t('space.switch')} value={space} onChange={onSpace} style={sel}
+              data-key={KEY_SPACE}>
+              {!space && <option value="">{t('space.pick')}</option>}
+              {spaces.map((k) => <option key={k} value={k}>{t(`space.${k}`)}</option>)}
+            </select>
+            <Icon name="chevron" size={14} strokeWidth={2} style={chev} />
+          </span>
+        )}
         {opts.length > 1 && (
-          <select aria-label={t(CTX_LABEL[space])} value={ctx} onChange={onContext} style={sel}>
-            {opts.map((o) => (
-              <option key={o.id} value={o.id}>{o.hint ? `${o.label} · ${o.hint}` : o.label}</option>
-            ))}
-          </select>
+          <span style={wrapSel}>
+            <select aria-label={t(CTX_LABEL[space])} value={ctx} onChange={onContext} style={sel}>
+              {opts.map((o) => (
+                <option key={o.id} value={o.id}>{o.hint ? `${o.label} · ${o.hint}` : o.label}</option>
+              ))}
+            </select>
+            <Icon name="chevron" size={14} strokeWidth={2} style={chev} />
+          </span>
         )}
         {opts.length === 1 && (
           <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--muted)' }}>{opts[0].label}</span>

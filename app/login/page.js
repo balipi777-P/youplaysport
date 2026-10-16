@@ -135,7 +135,7 @@ export default function LoginPage() {
                     </div>
                     <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, letterSpacing: '.4px',
                       textTransform: 'uppercase', borderRadius: 999, padding: '4px 9px',
-                      background: on ? '#fff' : '#F1E9E1', color: on ? 'var(--brand-dark)' : '#8A7E72' }}>
+                      background: on ? '#fff' : '#F1E9E1', color: on ? 'var(--brand-dark)' : '#6B665A' }}>
                       {t(`signup.role.${r}.badge`)}
                     </span>
                   </button>

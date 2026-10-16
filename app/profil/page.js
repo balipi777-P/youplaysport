@@ -25,7 +25,7 @@ const DAY_TONES = {
   present: { bg: '#E9F1EA', ink: '#2E5A43', border: '#CFE2D2' },
   late: { bg: '#FFF1E3', ink: '#9A5B18', border: '#F6DCC0' },
   absent: { bg: '#F7E3DE', ink: '#8E3A26', border: '#EBD3C9' },
-  marked: { bg: '#fff', ink: '#8A8577', border: 'var(--border)' },
+  marked: { bg: '#fff', ink: 'var(--muted)', border: 'var(--border)' },
   none: { bg: '#F4F0E9', ink: '#BDB5A7', border: 'transparent' },
 };
 /* Ordre de gravité : si deux séances tombent le même jour, la grille montre l'état

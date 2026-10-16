@@ -1,5 +1,6 @@
 'use client';
 
+import Icon from './Icon';
 import { useT } from '../../lib/i18n';
 
 /* Vue « Journée sportive » du parent. Composant purement présentatif : toutes les
@@ -134,7 +135,9 @@ export default function ParentJournal({
           style={{ flex: '0 0 auto', border: '1px solid var(--border)', background: '#fff', borderRadius: 999,
             padding: '8px 13px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
             color: 'var(--brand-dark)' }}>
-          🔔 {t('nav.alerts')}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Icon name="bell" size={15} />{t('nav.alerts')}
+          </span>
         </button>
       </div>
 
@@ -184,8 +187,16 @@ export default function ParentJournal({
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <button className="btn ghost" style={{ marginBottom: 0 }} onClick={onCarnet}>{t('home.carnet')}</button>
-        <button className="btn ghost" style={{ marginBottom: 0 }} onClick={onAgenda}>{t('home.agenda')}</button>
+        <button className="btn ghost" style={{ marginBottom: 0 }} onClick={onCarnet}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+            <Icon name="star" size={17} />{t('home.carnet')}
+          </span>
+        </button>
+        <button className="btn ghost" style={{ marginBottom: 0 }} onClick={onAgenda}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+            <Icon name="calendar" size={17} />{t('home.agenda')}
+          </span>
+        </button>
       </div>
 
       {!session && (
