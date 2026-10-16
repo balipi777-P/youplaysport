@@ -45,6 +45,8 @@ export default function Evenements() {
   const [eventId, setEventId] = useState(''); // '' = nouvel événement
   const [players, setPlayers] = useState([]);
   const [convocations, setConvocations] = useState({}); // {playerId: response|null}
+  const [summary, setSummary] = useState(null); // {present, absent, pending} d'event_responses
+  const [resending, setResending] = useState(false);
   const [type, setType] = useState('match');
   const [opponent, setOpponent] = useState('');
   const [place, setPlace] = useState('');
@@ -54,6 +56,13 @@ export default function Evenements() {
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
   const [busy, setBusy] = useState(false);
+
+  /* Message clair pour les erreurs des RPC de convocation. */
+  const rpcMsg = (e) => {
+    const m = String(e?.message || '');
+    const code = ['not_authorized', 'not_convoked', 'event_not_found'].find((c) => m.includes(c));
+    return code ? t(`rsvp.err.${code}`) : t('rsvp.err.other');
+  };
 
   const flash = (m) => { setOk(m); setErr(''); setTimeout(() => setOk(''), 3500); };
 
@@ -105,11 +114,16 @@ export default function Evenements() {
   /* Réponses réelles de l'événement affiché. Un événement qui n'existe pas
      encore n'a aucune ligne : tout le monde est en attente. */
   const loadConvocations = useCallback(async (eid) => {
-    if (!eid) { setConvocations({}); return; }
-    const { data } = await supabase.from('event_convocations')
-      .select('player_id, response').eq('event_id', eid);
-    setConvocations(Object.fromEntries((data || []).map((r) => [r.player_id, r.response])));
-  }, []);
+    if (!eid) { setConvocations({}); setSummary(null); return; }
+    const { data, error } = await supabase.schema('yps').rpc('event_responses', { p_event: eid });
+    if (error) {
+      console.error('[event_responses]', error);
+      setConvocations({}); setSummary(null); setErr(rpcMsg(error));
+      return;
+    }
+    setConvocations(Object.fromEntries((data?.players || []).map((r) => [r.player_id, r.response])));
+    setSummary({ present: data?.present ?? 0, absent: data?.absent ?? 0, pending: data?.pending ?? 0 });
+  }, [t]);
 
   useEffect(() => { loadConvocations(eventId); }, [eventId, loadConvocations]);
 
@@ -132,6 +146,20 @@ export default function Evenements() {
       const d = new Date(ev.rsvp_deadline);
       setDeadline(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
     } else setDeadline('');
+  }
+
+  async function resend() {
+    setErr(''); setResending(true);
+    try {
+      const { data, error } = await supabase.schema('yps').rpc('send_convocations', { p_event: eventId });
+      if (error) throw error;
+      const n = Number(data) || 0;
+      flash(n > 0 ? t('rsvp.sentN', { n }) : t('rsvp.upToDate'));
+      await loadConvocations(eventId);
+    } catch (e) {
+      console.error('[send_convocations]', e);
+      setErr(rpcMsg(e));
+    } finally { setResending(false); }
   }
 
   async function send() {
@@ -158,7 +186,7 @@ export default function Evenements() {
 
   const locked = Boolean(eventId); // un événement existant se consulte, il ne se ressaisit pas
   const answered = (p) => convocations[p.id] || 'pending';
-  const count = (s) => players.filter((p) => answered(p) === s).length;
+  const count = (s) => (summary && eventId ? summary[s] : players.filter((p) => answered(p) === s).length);
 
   /* Qui est en droit de répondre. event_convocations ne garde pas l'auteur de
      la réponse : ce qui est sûr, c'est le compte rattaché au licencié. */
@@ -329,9 +357,14 @@ export default function Evenements() {
           {/* Un événement existant se consulte : aucun bouton d'envoi, les
               convocations sont déjà parties au moment de sa création. */}
           {locked ? (
-            <button type="button" className="btn ghost" onClick={() => pickEvent('')}>
-              {t('evt.newEvent')}
-            </button>
+            <>
+              <button type="button" className="btn" disabled={resending} onClick={resend}>
+                {resending ? t('evt.sending') : t('rsvp.sendCallups')}
+              </button>
+              <button type="button" className="btn ghost" onClick={() => pickEvent('')}>
+                {t('evt.newEvent')}
+              </button>
+            </>
           ) : (
             <button className="btn" disabled={busy || players.length === 0} onClick={send}
               style={{ padding: 16, fontSize: 16, borderRadius: 16,

@@ -16,19 +16,23 @@ export default function Agenda() {
   const [player, setPlayer] = useState(null);
   const [items, setItems] = useState([]);
   const [busyId, setBusyId] = useState('');
+  const [err, setErr] = useState('');
 
   const loadEvents = useCallback(async (p) => {
     setPlayer(p || null);
     if (!p) { setItems([]); return; }
-    const { data: convs } = await supabase.from('event_convocations')
-      .select('id, response, event_id, events(id, type, datetime, place, opponent)')
-      .eq('player_id', p.id);
-    const rows = (convs || [])
-      .filter((c) => c.events)
-      .map((c) => ({ convId: c.id, response: c.response, ev: c.events }))
+    const { data, error } = await supabase.schema('yps').rpc('my_convocations');
+    if (error) { console.error('[my_convocations]', error); setErr(t('rsvp.err.other')); setItems([]); return; }
+    const rows = (data || [])
+      .filter((c) => c.player_id === p.id)
+      .map((c) => ({
+        convId: `${c.event_id}:${c.player_id}`, eventId: c.event_id, playerId: c.player_id,
+        response: c.response,
+        ev: { type: c.type, datetime: c.datetime, place: c.place, opponent: c.opponent, rsvp_deadline: c.rsvp_deadline },
+      }))
       .sort((a, b) => new Date(a.ev.datetime) - new Date(b.ev.datetime));
     setItems(rows);
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     (async () => {
@@ -47,12 +51,18 @@ export default function Agenda() {
   }
 
   async function respond(item, response) {
-    setBusyId(item.convId);
+    setBusyId(item.convId); setErr('');
     try {
-      await supabase.from('event_convocations')
-        .update({ response, responded_at: new Date().toISOString() })
-        .eq('id', item.convId);
+      const { error } = await supabase.schema('yps').rpc('rsvp', {
+        p_event: item.eventId, p_player: item.playerId, p_response: response,
+      });
+      if (error) throw error;
       await loadEvents(player);
+    } catch (e) {
+      console.error('[rsvp]', e);
+      const m = String(e?.message || '');
+      const code = ['not_authorized', 'not_convoked', 'event_not_found'].find((c) => m.includes(c));
+      setErr(code ? t(`rsvp.err.${code}`) : t('rsvp.err.other'));
     } finally { setBusyId(''); }
   }
 
@@ -100,6 +110,8 @@ export default function Agenda() {
         </div>
       )}
 
+      {err && <div className="error">{err}</div>}
+
       {upcoming.length === 0 && (
         <div className="card"><p style={{ margin: 0, color: 'var(--muted)' }}>{t('agenda.none')}</p></div>
       )}
@@ -121,6 +133,11 @@ export default function Agenda() {
               <button type="button" disabled={busyId === i.convId} onClick={() => respond(i, 'absent')}
                 style={btn(i.response === 'absent', '#C0392B', '#FDECEA')}>{t('agenda.absent')}</button>
             </div>
+            {i.ev.rsvp_deadline && (
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
+                {t('rsvp.deadline', { date: fmt(i.ev.rsvp_deadline, lang) })}
+              </div>
+            )}
             {!i.response && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>{t('agenda.pleaseRespond')}</div>}
           </div>
         );
