@@ -943,7 +943,7 @@ export default function Club() {
           </span>
         </div>
         <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 14 }}>{t('adm.lic.brandingNote')}</div>
-        <BrandingEditor club={club} colorsOnly bare onSaved={(b) => setClub((c) => ({ ...c, ...b }))} />
+        <BrandingEditor club={club} bare onSaved={(b) => setClub((c) => ({ ...c, ...b }))} />
       </>
     ));
   };
