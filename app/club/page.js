@@ -19,7 +19,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
 import { getStored, KEY_CLUB } from '../../lib/spaces';
 import Icon from '../components/Icon';
-import { BrandingEditor, ClubWelcome, isHex, darken } from '../components/ClubBranding';
+import { BrandingEditor, ClubWelcome, MartialDiscipline, isMartialSport, isHex, darken } from '../components/ClubBranding';
 
 /* Les 8 entrées de la barre latérale. Chacune ouvre une section réellement
    adossée à une table : rien ne mène à un écran vide sans explication. */
@@ -194,6 +194,7 @@ export default function Club() {
   // Saisies
   const [teamName, setTeamName] = useState('');
   const [teamSport, setTeamSport] = useState('');
+  const [teamDiscipline, setTeamDiscipline] = useState('');
   const [pFirst, setPFirst] = useState('');
   const [pLast, setPLast] = useState('');
   const [parentEmail, setParentEmail] = useState({});     // {playerId: email}
@@ -487,11 +488,16 @@ export default function Club() {
   async function addTeam() {
     setErr(''); setBusy(true);
     try {
-      if (!teamName.trim()) throw new Error(t('club.errTeamName'));
+      /* Arts martiaux : la discipline précisée sert de nom si aucun nom n'est saisi ;
+         sport_id reste celui du référentiel. */
+      const chosen = sports.find((s) => s.id === teamSport);
+      const discipline = isMartialSport(chosen) ? teamDiscipline.trim() : '';
+      const name = teamName.trim() || discipline || (isMartialSport(chosen) ? sportName(chosen) : '');
+      if (!name) throw new Error(t('club.errTeamName'));
       const { data, error } = await supabase.from('teams')
-        .insert({ club_id: club.id, sport_id: teamSport, name: teamName.trim() }).select('id').single();
+        .insert({ club_id: club.id, sport_id: teamSport, name }).select('id').single();
       if (error) throw error;
-      setTeamName(''); flash(t('club.teamCreated'));
+      setTeamName(''); setTeamDiscipline(''); flash(t('club.teamCreated'));
       await loadTeams(club.id, data.id);
     } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
   }
@@ -1222,6 +1228,9 @@ export default function Club() {
                 <select className="input" value={teamSport} onChange={(e) => setTeamSport(e.target.value)}>
                   {sports.map((s) => <option key={s.id} value={s.id}>{s.icon} {sportName(s)}</option>)}
                 </select>
+                {isMartialSport(sports.find((s) => s.id === teamSport)) && (
+                  <MartialDiscipline value={teamDiscipline} onChange={setTeamDiscipline} />
+                )}
                 <button className="btn" disabled={busy} onClick={addTeam}>{busy ? '…' : t('club.doCreateTeam')}</button>
               </div>
 

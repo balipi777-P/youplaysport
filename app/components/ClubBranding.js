@@ -244,11 +244,45 @@ export function BrandingEditor({ club, onSaved, colorsOnly = false, bare = false
   );
 }
 
+const MARTIAL_SUGGESTIONS = ['Karaté', 'Taekwondo', 'Aïkido', 'Judo', 'Boxe', 'Lutte', 'Krav Maga'];
+
+/** Le sport « Judo / Arts martiaux » du référentiel (reconnu par son nom, sport_id inchangé). */
+export function isMartialSport(s) {
+  return /judo|arts?\s*martia/i.test(`${s?.name_fr || ''} ${s?.name_en || ''}`);
+}
+
+/** Précision manuelle de la discipline : texte libre + suggestions cliquables. */
+export function MartialDiscipline({ value, onChange }) {
+  const { t } = useT();
+  return (
+    <div style={{ marginTop: 14, marginBottom: 6 }}>
+      <div className="label" style={{ marginBottom: 6 }}>{t('martial.label')}</div>
+      <input className="input" value={value} onChange={(e) => onChange(e.target.value)}
+        placeholder={t('martial.ph')} maxLength={60} style={{ marginBottom: 8 }} />
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+        {MARTIAL_SUGGESTIONS.map((n) => {
+          const on = value.trim().toLowerCase() === n.toLowerCase();
+          return (
+            <button key={n} type="button" onClick={() => onChange(on ? '' : n)} aria-pressed={on}
+              style={{ border: 'none', borderRadius: 20, padding: '8px 13px', fontSize: 13, fontWeight: 700,
+                cursor: 'pointer', fontFamily: 'inherit', minHeight: 36,
+                background: on ? 'var(--brand)' : '#F1E9E1', color: on ? '#fff' : '#57534A' }}>
+              {n}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginTop: 8 }}>{t('martial.hint')}</div>
+    </div>
+  );
+}
+
 /** Écran de bienvenue du fondateur : sports → couleurs → logo → « C'est parti ». */
 export function ClubWelcome({ club, sports, onDone, onSkip }) {
   const { t, lang } = useT();
   const [step, setStep] = useState(0);
   const [picked, setPicked] = useState([]);
+  const [discipline, setDiscipline] = useState('');
   const [accent, setAccent] = useState(isHex(club.accent_color) ? club.accent_color : DEFAULT_ACCENT);
   const [secondary, setSecondary] = useState(isHex(club.secondary_color) ? club.secondary_color : DEFAULT_SECONDARY);
   const [file, setFile] = useState(null);
@@ -263,7 +297,7 @@ export function ClubWelcome({ club, sports, onDone, onSkip }) {
     try {
       const r = await saveClubBranding({ clubId: club.id, accent, secondary, file, currentLogo: club.logo_url });
       const rows = sports.filter((s) => picked.includes(s.id))
-        .map((s) => ({ club_id: club.id, sport_id: s.id, name: sportName(s) }));
+        .map((s) => ({ club_id: club.id, sport_id: s.id, name: (isMartialSport(s) && discipline.trim()) || sportName(s) }));
       const { error } = await supabase.from('teams').insert(rows);
       if (error) throw error;
       await onDone({ accent_color: accent, secondary_color: secondary, logo_url: r.logo_url });
@@ -298,6 +332,9 @@ export function ClubWelcome({ club, sports, onDone, onSkip }) {
             );
           })}
         </div>
+      )}
+      {step === 0 && sports.some((s) => picked.includes(s.id) && isMartialSport(s)) && (
+        <MartialDiscipline value={discipline} onChange={setDiscipline} />
       )}
 
       {step === 1 && (
