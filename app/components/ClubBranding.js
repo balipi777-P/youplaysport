@@ -36,27 +36,54 @@ export function initialsOf(name) {
   return (name || '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
 }
 
-/**
- * Enregistre couleurs + logo. L'upload du logo est facultatif : s'il échoue
- * (bucket ou droits manquants), le reste est enregistré et logoFailed vaut true.
- */
-export async function saveClubBranding({ clubId, accent, secondary, file, currentLogo }) {
-  let logo = currentLogo || null;
-  let logoFailed = false;
-  if (file) {
-    try {
-      const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
-      const path = `${clubId}/logo-${Date.now()}.${ext}`;
-      const up = await supabase.storage.from('brand').upload(path, file, { upsert: true, contentType: file.type });
-      if (up.error) throw up.error;
-      logo = supabase.storage.from('brand').getPublicUrl(path).data.publicUrl;
-    } catch (e) { console.error('logo upload', e); logoFailed = true; }
-  }
-  const { error } = await supabase.schema('yps').rpc('update_club_branding', {
+const LOGO_BUCKET = 'club-logos';
+const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+
+/** Envoie le fichier dans le bucket public et renvoie son URL publique. */
+async function uploadLogo(clubId, file) {
+  const ext = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[file.type] || 'png';
+  const path = `${clubId}/logo-${Date.now()}.${ext}`;
+  const up = await supabase.storage.from(LOGO_BUCKET).upload(path, file, { upsert: true, contentType: file.type });
+  if (up.error) throw up.error;
+  return supabase.storage.from(LOGO_BUCKET).getPublicUrl(path).data.publicUrl;
+}
+
+/** update_club_branding : null = garder, '' = retirer (logo), valeur = définir. La fonction
+    répond {ok:false} sans erreur quand l'appelant n'est pas dirigeant du club. */
+async function callBranding(clubId, accent, secondary, logo) {
+  const { data, error } = await supabase.schema('yps').rpc('update_club_branding', {
     p_club: clubId, p_accent: accent, p_secondary: secondary, p_logo_url: logo,
   });
   if (error) throw error;
+  if (data && data.ok === false) throw new Error('not_authorized');
+}
+
+/**
+ * Enregistre couleurs (+ logo si un fichier est fourni). L'upload du logo est
+ * facultatif : s'il échoue, le reste est enregistré et logoFailed vaut true.
+ */
+export async function saveClubBranding({ clubId, accent, secondary, file, currentLogo }) {
+  let logo = currentLogo || null;
+  let newLogo = null;
+  let logoFailed = false;
+  if (file) {
+    try { newLogo = await uploadLogo(clubId, file); logo = newLogo; }
+    catch (e) { console.error('logo upload', e); logoFailed = true; }
+  }
+  await callBranding(clubId, accent, secondary, newLogo);
   return { logo_url: logo, logoFailed };
+}
+
+/** Logo seul (couleurs intactes) : url publique après upload. */
+export async function saveClubLogo(clubId, file) {
+  const url = await uploadLogo(clubId, file);
+  await callBranding(clubId, null, null, url);
+  return url;
+}
+
+/** Efface le logo (couleurs intactes). */
+export async function removeClubLogo(clubId) {
+  await callBranding(clubId, null, null, '');
 }
 
 /** Message amical pour une erreur de la RPC. */
@@ -112,7 +139,7 @@ export function BrandPreview({ name, accent, secondary, logoUrl }) {
 }
 
 /** Sélecteur de logo : aperçu local, taille bornée, jamais bloquant. */
-export function LogoPicker({ file, onFile, currentLogo }) {
+export function LogoPicker({ file, onFile, currentLogo, onRemove, busy = false }) {
   const { t } = useT();
   const [preview, setPreview] = useState('');
   const [warn, setWarn] = useState('');
@@ -126,7 +153,7 @@ export function LogoPicker({ file, onFile, currentLogo }) {
     const f = e.target.files && e.target.files[0];
     e.target.value = '';
     if (!f) return;
-    if (!f.type.startsWith('image/')) { setWarn(t('brand.logoNotImage')); return; }
+    if (!LOGO_TYPES.includes(f.type)) { setWarn(t('brand.logoNotImage')); return; }
     if (f.size > LOGO_MAX) { setWarn(t('brand.logoTooBig')); return; }
     setWarn(''); onFile(f);
   }
@@ -141,10 +168,11 @@ export function LogoPicker({ file, onFile, currentLogo }) {
         </span>
         <label className="btn ghost" style={{ width: 'auto', padding: '11px 16px', cursor: 'pointer', display: 'inline-block' }}>
           {shown ? t('brand.logoChange') : t('brand.logoPick')}
-          <input type="file" accept="image/*" onChange={pick} style={{ display: 'none' }} />
+          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={pick} disabled={busy}
+            style={{ display: 'none' }} />
         </label>
-        {file && (
-          <button type="button" onClick={() => onFile(null)}
+        {(file || (onRemove && currentLogo)) && (
+          <button type="button" disabled={busy} onClick={() => (file ? onFile(null) : onRemove())}
             style={{ border: 'none', background: 'transparent', color: 'var(--muted)', fontFamily: 'inherit',
               fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>{t('brand.logoRemove')}</button>
         )}
@@ -159,20 +187,39 @@ export function BrandingEditor({ club, onSaved, colorsOnly = false, bare = false
   const { t } = useT();
   const [accent, setAccent] = useState(isHex(club.accent_color) ? club.accent_color : DEFAULT_ACCENT);
   const [secondary, setSecondary] = useState(isHex(club.secondary_color) ? club.secondary_color : DEFAULT_SECONDARY);
-  const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [bad, setBad] = useState('');
-  const fileUrl = useObjectUrl(file);
 
   async function save() {
     setBusy(true); setMsg(''); setBad('');
     try {
-      const r = await saveClubBranding({ clubId: club.id, accent, secondary, file, currentLogo: club.logo_url });
-      onSaved({ accent_color: accent, secondary_color: secondary, logo_url: r.logo_url });
-      setFile(null);
-      if (r.logoFailed) setBad(t('brand.logoUnavailable'));
-      else setMsg(t('brand.saved'));
+      await saveClubBranding({ clubId: club.id, accent, secondary, file: null, currentLogo: club.logo_url });
+      onSaved({ accent_color: accent, secondary_color: secondary });
+      setMsg(t('brand.saved'));
+    } catch (e) { setBad(brandingError(e, t)); } finally { setBusy(false); }
+  }
+
+  /* Le logo s'enregistre dès le choix du fichier, indépendamment des couleurs. */
+  async function pickLogo(f) {
+    if (!f) return;
+    setBusy(true); setMsg(''); setBad('');
+    try {
+      const url = await saveClubLogo(club.id, f);
+      onSaved({ logo_url: url });
+      setMsg(t('brand.logoSaved'));
+    } catch (e) {
+      console.error('logo', e);
+      setBad(`${(e && e.message) || ''}`.includes('not_authorized') ? t('brand.notAuthorized') : t('brand.logoUnavailable'));
+    } finally { setBusy(false); }
+  }
+
+  async function dropLogo() {
+    setBusy(true); setMsg(''); setBad('');
+    try {
+      await removeClubLogo(club.id);
+      onSaved({ logo_url: null });
+      setMsg(t('brand.logoRemoved'));
     } catch (e) { setBad(brandingError(e, t)); } finally { setBusy(false); }
   }
 
@@ -183,11 +230,11 @@ export function BrandingEditor({ club, onSaved, colorsOnly = false, bare = false
       {!colorsOnly && (
         <>
           <div className="label" style={{ marginBottom: 8 }}>{t('adm.brandingLogo')}</div>
-          <div style={{ marginBottom: 16 }}><LogoPicker file={file} onFile={setFile} currentLogo={club.logo_url} /></div>
+          <div style={{ marginBottom: 16 }}><LogoPicker file={null} onFile={pickLogo} currentLogo={club.logo_url} onRemove={dropLogo} busy={busy} /></div>
         </>
       )}
       <BrandPreview name={club.name} accent={accent} secondary={secondary}
-        logoUrl={fileUrl || club.logo_url} />
+        logoUrl={club.logo_url} />
       <button type="button" className="btn" style={{ marginTop: 14 }} disabled={busy} onClick={save}>
         {busy ? '…' : t('brand.save')}
       </button>

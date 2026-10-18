@@ -608,14 +608,18 @@ export default function Club() {
     @media (max-width: 900px) {
       .cons { display: block; }
       .cons-side { position: sticky; top: 0; z-index: 30; width: auto; height: auto; flex: none;
-        border-right: none; border-bottom: 1px solid var(--border); padding: 10px 16px; }
+        border-right: none; border-bottom: 1px solid var(--border); padding: 10px 16px; background: #fff; }
+      .cons-side[data-open="true"] { z-index: 70; }
       .cons-fold { position: fixed; top: 0; left: 0; bottom: 0; width: min(300px, 86vw); z-index: 2;
-        background: #fff; padding: 20px 16px 22px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+        background: #FFFFFF; padding: 20px 16px 22px; overflow-y: auto; -webkit-overflow-scrolling: touch;
         box-shadow: 4px 0 24px rgba(0,0,0,.14); transform: translateX(-105%); visibility: hidden;
         transition: transform .22s ease, visibility 0s linear .22s; }
       .cons-side[data-open="true"] .cons-fold { transform: translateX(0); visibility: visible;
         transition: transform .22s ease, visibility 0s; }
-      .cons-backdrop { display: block; position: fixed; inset: 0; z-index: 1; background: rgba(30,20,15,.4); }
+      .cons-backdrop { display: block; position: fixed; inset: 0; z-index: 1; background: rgba(0,0,0,.45); }
+      .cons-navbtn { min-height: 48px; padding: 12px 14px !important; font-size: 15px !important; border-radius: 14px !important; }
+      .cons-navbtn[data-on="false"] { color: #2B2722 !important; }
+      .cons-navbtn[data-on="true"] { box-shadow: 0 2px 10px rgba(0,0,0,.18); }
       .cons-burger { display: inline-flex; }
       .cons-main { padding: 18px 16px 48px; }
       .cons-two { grid-template-columns: 1fr; }
@@ -1467,7 +1471,7 @@ export default function Club() {
             {NAV.map((item) => {
               const on = section === item.key;
               return (
-                <button key={item.key} type="button"
+                <button key={item.key} type="button" className="cons-navbtn" data-on={on ? 'true' : 'false'}
                   onClick={() => { setSection(item.key); setMenuOpen(false); setErr(''); }}
                   aria-current={on ? 'page' : undefined}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
