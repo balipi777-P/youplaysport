@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Icon from './Icon';
 import Accordion from './Accordion';
 import { useT } from '../../lib/i18n';
+import { firstNameOf, initialsOfName } from '../../lib/userName';
 
 /* Vue « Journée sportive » du parent. Composant purement présentatif : toutes les
    données arrivent en props depuis l'accueil, qui reste seul à parler à Supabase.
@@ -56,7 +57,7 @@ function dayLong(value, lang) {
 }
 
 export default function ParentJournal({
-  todayLabel, parentName, kids, player, clubCount,
+  todayLabel, userName, roleLine, kids, player, clubCount,
   session, attendance, attendanceAt, sessionSkills, streak,
   nextEvent, convocation,
   onSwitchChild, onAlerts, onAdd, onCarnet, onAgenda,
@@ -77,7 +78,7 @@ export default function ParentJournal({
   /* Décomptes réels : enfants rattachés au compte, clubs distincts parmi eux. */
   const childLabel = t(kids.length === 1 ? 'journal.childCount' : 'journal.childCountMany', { n: kids.length });
   const clubLabel = t(clubCount === 1 ? 'journal.clubCount' : 'journal.clubCountMany', { n: clubCount });
-  const subtitle = [parentName, `${childLabel}, ${clubLabel}`].filter(Boolean).join(' · ');
+  const subtitle = [roleLine, `${childLabel}, ${clubLabel}`].filter(Boolean).join(' · ');
 
   const initials = (c) => `${(c.first_name || '')[0] || ''}${(c.last_name || '')[0] || ''}`.toUpperCase();
   const sportName = (sp) => (lang === 'en' ? sp?.name_en || sp?.name_fr : sp?.name_fr) || '';
@@ -132,10 +133,16 @@ export default function ParentJournal({
             {todayLabel}
           </div>
           <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.4px', margin: '3px 0 4px' }}>
-            {t('home.todayTitle')}
+            {userName ? t('hello.name', { name: firstNameOf(userName) }) : t('home.todayTitle')}
           </h1>
           <div style={{ fontSize: 12.5, color: 'var(--muted)', fontWeight: 600 }}>{subtitle}</div>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '0 0 auto' }}>
+        {userName && (
+          <span className="q" aria-hidden="true" style={{ width: 40, height: 40, borderRadius: 14,
+            background: 'var(--peach)', color: 'var(--brand-dark)', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>{initialsOfName(userName)}</span>
+        )}
         <button type="button" onClick={onAlerts}
           style={{ flex: '0 0 auto', border: '1px solid var(--border)', background: '#fff', borderRadius: 999,
             padding: '8px 13px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
@@ -144,6 +151,7 @@ export default function ParentJournal({
             <Icon name="bell" size={15} />{t('nav.alerts')}
           </span>
         </button>
+        </div>
       </div>
 
       {/* ---- Pastilles enfants : une par rattachement, plus l'accès à l'ajout ---- */}

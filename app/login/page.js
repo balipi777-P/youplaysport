@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { useT, LangToggle } from '../../lib/i18n';
+import { saveMyName, rememberPendingName } from '../../lib/userName';
 
 /**
  * Profils proposés à l'inscription. La clé est mémorisée telle quelle dans
@@ -25,6 +26,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState(null);
+  const [fullName, setFullName] = useState('');
   const [consent, setConsent] = useState(false);
   const [err, setErr] = useState('');
   const [msg, setMsg] = useState('');
@@ -36,6 +38,7 @@ export default function LoginPage() {
     if (mode === 'signup') {
       // Garde-fous côté front : le profil aiguille la suite, et le consentement
       // est obligatoire pour un compte parent (données d'un mineur).
+      if (!fullName.trim()) { setErr(t('signup.errName')); return; }
       if (!role) { setErr(t('signup.errRole')); return; }
       if (role === 'parent' && !consent) { setErr(t('signup.errConsent')); return; }
     }
@@ -46,6 +49,10 @@ export default function LoginPage() {
         if (error) throw error;
         rememberRole(role);
         const { data } = await supabase.auth.getSession();
+        /* Sans session (email à confirmer), le nom attend la première connexion. */
+        if (data.session) {
+          try { await saveMyName(fullName); } catch { rememberPendingName(fullName.trim(), email); }
+        } else rememberPendingName(fullName.trim(), email);
         if (data.session) router.push('/');
         else setMsg(t('login.confirmEmail'));
       } else {
@@ -151,6 +158,13 @@ export default function LoginPage() {
           )}
           {err && <div className="error">{err}</div>}
           {msg && <div className="pill" style={{ marginBottom: 12 }}>{msg}</div>}
+          {mode === 'signup' && (
+            <>
+              <div className="label" style={{ marginBottom: 6 }}>{t('signup.fullName')}</div>
+              <input className="input" required value={fullName} maxLength={80} autoComplete="name"
+                onChange={(e) => setFullName(e.target.value)} placeholder={t('signup.fullNamePh')} />
+            </>
+          )}
           <div className="label" style={{ marginBottom: 6 }}>{t('login.email')}</div>
           <input className="input" type="email" required value={email}
             onChange={(e) => setEmail(e.target.value)} placeholder="vous@email.com" />

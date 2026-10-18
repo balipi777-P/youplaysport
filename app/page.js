@@ -7,6 +7,8 @@ import { loadMyChildren, pickChild, setStoredChildId } from '../lib/children';
 import { getStored, KEY_CLUB, KEY_TEAM, fetchMySpaces, validStoredSpace } from '../lib/spaces';
 import { useT, LangToggle } from '../lib/i18n';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from './components/BottomNav';
+import ClubAvatar from './components/ClubAvatar';
+import { NAME_EVENT, fetchMyName } from '../lib/userName';
 import ParentJournal from './components/ParentJournal';
 import AthleteToday from './components/AthleteToday';
 import CoachGroups from './components/CoachGroups';
@@ -143,7 +145,7 @@ export default function Home() {
      coach_teams pour un coach, toutes les équipes du club pour un dirigeant —
      fusionnées par id : un compte qui cumule les deux ne voit pas de doublon. */
   const loadStaffData = useCallback(async (mem, uid) => {
-    const TEAM_COLS = 'id, name, category, club_id, sport_id, clubs(name), sports(name_fr, name_en, icon)';
+    const TEAM_COLS = 'id, name, category, club_id, sport_id, clubs(name, logo_url, accent_color), sports(name_fr, name_en, icon)';
     const byId = new Map();
     if (mem.some((m) => m.role === 'coach')) {
       const { data } = await supabase.from('coach_teams')
@@ -227,7 +229,7 @@ export default function Home() {
       : { data: null };
     setUserName((au?.full_name || '').trim());
     const { data: mem } = await supabase
-      .from('memberships').select('role, club_id, clubs(name, join_code)');
+      .from('memberships').select('role, club_id, clubs(name, join_code, logo_url, accent_color)');
     setMemberships(mem || []);
     if (uid && (mem || []).some((m) => m.role === 'admin' || m.role === 'coach')) {
       await loadStaffData(mem || [], uid);
@@ -246,6 +248,13 @@ export default function Home() {
     await loadChildData(chosen);
     return { mem: mem || [], hasChild: all.length > 0, spaces: sd, space: sp };
   }, [loadChildData, loadStaffData]);
+
+  /* Le nom saisi dans l'encart « Comment t'appelles-tu ? » apparaît sans recharger. */
+  useEffect(() => {
+    const h = () => { fetchMyName().then((r) => setUserName(r.name)).catch(() => {}); };
+    window.addEventListener(NAME_EVENT, h);
+    return () => window.removeEventListener(NAME_EVENT, h);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -302,6 +311,13 @@ export default function Home() {
   /* L'utilisateur consulte sa propre fiche : accueil au « tu ». */
   const isAthlete = !!player && myPlayerIds.includes(player.id);
 
+  /* Club en tête de page, et ligne de réassurance « rôle · club ». */
+  const playerClub = player?.teams?.clubs || null;
+  const headClub = staff ? staff.clubs : playerClub;
+  const roleKey = staff ? (staff.role === 'admin' ? 'me.adminRole' : 'space.coach')
+    : (isAthlete ? 'space.athlete' : 'space.parent');
+  const roleLine = [t(roleKey), headClub?.name].filter(Boolean).join(' · ');
+
   /* Compétences validées pendant la séance affichée, et non tout le carnet. */
   const sessionSkills = session ? skills.filter((s) => s.session_id === session.id) : [];
 
@@ -347,12 +363,27 @@ export default function Home() {
   return (
     <div className="wrap" style={{ paddingBottom: BOTTOM_NAV_HEIGHT + 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-        <div className="brand">
-          <div className="logo">Y</div>
-          <div className="q" style={{ fontWeight: 700, fontSize: 17 }}>
-            You<span style={{ color: 'var(--brand)' }}>Play</span>Sport
+        {headClub ? (
+          /* Le club en évidence ; YouPlaySport reste en filigrane. */
+          <div className="brand" style={{ minWidth: 0 }}>
+            <ClubAvatar name={headClub.name} logoUrl={headClub.logo_url} color={headClub.accent_color || 'var(--brand)'}
+              size={40} radius={13} fontSize={14} />
+            <div style={{ minWidth: 0 }}>
+              <div className="q" style={{ fontWeight: 700, fontSize: 16, lineHeight: 1.2, overflow: 'hidden',
+                textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{headClub.name}</div>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--muted)', opacity: .8, letterSpacing: '.2px' }}>
+                YouPlaySport
+              </div>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="brand">
+            <div className="logo">Y</div>
+            <div className="q" style={{ fontWeight: 700, fontSize: 17 }}>
+              You<span style={{ color: 'var(--brand)' }}>Play</span>Sport
+            </div>
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <LangToggle />
           <a href="#" onClick={(e) => { e.preventDefault(); logout(); }} style={{ fontSize: 13, fontWeight: 700 }}>{t('common.logout')}</a>
@@ -365,7 +396,7 @@ export default function Home() {
       {player && !isAthlete && (
         <ParentJournal
           todayLabel={todayLabel}
-          parentName={userName}
+          userName={userName} roleLine={roleLine}
           kids={children}
           player={player}
           clubCount={clubCount}
@@ -388,6 +419,7 @@ export default function Home() {
       {player && isAthlete && (
         <AthleteToday
           todayLabel={todayLabel}
+          userName={userName} roleLine={roleLine}
           player={player}
           season={season}
           todaySession={todaySession}
@@ -409,7 +441,7 @@ export default function Home() {
           {player && <div style={{ borderTop: '1px solid var(--border)', margin: '20px 0 4px' }} />}
           <CoachGroups
             todayLabel={todayLabel}
-            coachName={userName}
+            coachName={userName} roleLine={roleLine}
             todaySession={staffSession}
             teams={coachTeams}
             showClub={manyClubs}

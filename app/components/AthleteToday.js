@@ -1,6 +1,7 @@
 'use client';
 
 import { useT } from '../../lib/i18n';
+import { firstNameOf, initialsOfName } from '../../lib/userName';
 
 /* Vue « Aujourd'hui » de l'athlète, au tutoiement. Composant purement présentatif :
    l'accueil reste seul à parler à Supabase et passe tout en props.
@@ -66,7 +67,7 @@ function dayLong(value, lang) {
 }
 
 export default function AthleteToday({
-  todayLabel, player, season,
+  todayLabel, userName, roleLine, player, season,
   todaySession, session, attendance, attendanceAt, sessionSkills,
   allSkills, convocations, history,
   rsvpBusy, onRespond,
@@ -75,7 +76,8 @@ export default function AthleteToday({
 
   const team = player?.teams;
   const clubName = team?.clubs?.name || '';
-  const initials = `${(player?.first_name || '')[0] || ''}${(player?.last_name || '')[0] || ''}`.toUpperCase();
+  const initials = initialsOfName(userName)
+    || `${(player?.first_name || '')[0] || ''}${(player?.last_name || '')[0] || ''}`.toUpperCase();
 
   const mot = session?.messages?.find((m) => m.type === 'mot_coach');
   const axes = session?.session_axes || [];
@@ -114,11 +116,11 @@ export default function AthleteToday({
             {todayLabel}
           </div>
           <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.4px', margin: '3px 0 4px' }}>
-            {t('athlete.hello', { name: player.first_name })}
+            {t('athlete.hello', { name: firstNameOf(userName) || player.first_name })}
           </h1>
-          {(clubName || team?.category) && (
+          {(roleLine || clubName || team?.category) && (
             <div style={{ fontSize: 12.5, color: 'var(--muted)', fontWeight: 600 }}>
-              {[clubName, team?.category].filter(Boolean).join(' · ')}
+              {[roleLine || clubName, team?.category].filter(Boolean).join(' · ')}
             </div>
           )}
         </div>

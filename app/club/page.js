@@ -20,6 +20,7 @@ import { useT } from '../../lib/i18n';
 import { getStored, KEY_CLUB } from '../../lib/spaces';
 import Icon from '../components/Icon';
 import ClubAvatar from '../components/ClubAvatar';
+import { useMyName, firstNameOf, initialsOfName } from '../../lib/userName';
 import { BrandingEditor, ClubWelcome, MartialDiscipline, isMartialSport, isHex, darken } from '../components/ClubBranding';
 
 /* Les 8 entrées de la barre latérale. Chacune ouvre une section réellement
@@ -196,6 +197,7 @@ export default function Club() {
   const [teamName, setTeamName] = useState('');
   const [teamSport, setTeamSport] = useState('');
   const [teamDiscipline, setTeamDiscipline] = useState('');
+  const myName = useMyName();
   const [pFirst, setPFirst] = useState('');
   const [pLast, setPLast] = useState('');
   const [parentEmail, setParentEmail] = useState({});     // {playerId: email}
@@ -1468,6 +1470,23 @@ export default function Club() {
               {menuOpen ? '✕' : '☰'}
             </button>
           </div>
+
+          {myName && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, padding: '9px 11px',
+              borderRadius: 14, background: 'var(--peach)' }}>
+              <span className="q" aria-hidden="true" style={{ width: 34, height: 34, flex: '0 0 34px', borderRadius: 11,
+                background: '#fff', color: 'var(--brand-dark)', display: 'flex', alignItems: 'center',
+                justifyContent: 'center', fontSize: 13, fontWeight: 800 }}>{initialsOfName(myName)}</span>
+              <span style={{ minWidth: 0 }}>
+                <span className="q" style={{ display: 'block', fontWeight: 700, fontSize: 14, color: '#5F2A1C' }}>
+                  {t('hello.name', { name: firstNameOf(myName) })}
+                </span>
+                <span style={{ display: 'block', fontSize: 11.5, color: '#7A4030', fontWeight: 600 }}>
+                  {[t('me.adminRole'), club.name].join(' · ')}
+                </span>
+              </span>
+            </div>
+          )}
 
           {menuOpen && <div className="cons-backdrop" onClick={() => setMenuOpen(false)} aria-hidden="true" />}
           <div className="cons-fold">

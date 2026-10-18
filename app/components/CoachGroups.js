@@ -1,6 +1,7 @@
 'use client';
 
 import { useT } from '../../lib/i18n';
+import { firstNameOf, initialsOfName } from '../../lib/userName';
 
 /* Onglet « Groupes » du coach — l'accueil de son espace. Composant purement
    présentatif : l'accueil reste seul à parler à Supabase et passe tout en props.
@@ -48,14 +49,13 @@ function Chip({ children }) {
 }
 
 export default function CoachGroups({
-  todayLabel, coachName, todaySession, teams, showClub,
+  todayLabel, coachName, roleLine, todaySession, teams, showClub,
   joinCode, onOpenSession, onNewSession, onNewEvent, onPresence, onSkills, onManageClub,
 }) {
   const { t, lang } = useT();
 
-  const name = coachName || t('coach.fallbackName');
-  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2)
-    .map((w) => w[0]).join('').toUpperCase();
+  const name = coachName ? t('hello.name', { name: firstNameOf(coachName) }) : t('coach.fallbackName');
+  const initials = initialsOfName(coachName) || 'C';
 
   /* Horaire de la séance du jour. La table sessions n'a pas de colonne de lieu :
      la ligne se limite à la date et à l'horaire. */
@@ -76,13 +76,13 @@ export default function CoachGroups({
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ color: 'var(--muted)', fontSize: 10.5, fontWeight: 800, letterSpacing: '.9px' }}>
-            {t('coach.eyebrow')}
+            {todayLabel}
           </div>
           <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.4px', margin: '3px 0 4px',
             wordBreak: 'break-word' }}>
             {name}
           </h1>
-          <div style={{ fontSize: 12.5, color: 'var(--muted)', fontWeight: 600 }}>{todayLabel}</div>
+          <div style={{ fontSize: 12.5, color: 'var(--muted)', fontWeight: 600 }}>{roleLine || t('coach.eyebrow')}</div>
         </div>
         <span className="q" aria-hidden="true" style={{ flex: '0 0 44px', width: 44, height: 44,
           borderRadius: 15, background: 'var(--peach)', color: 'var(--brand-dark)', display: 'flex',
