@@ -12,6 +12,7 @@ import { NAME_EVENT, fetchMyName } from '../lib/userName';
 import ParentJournal from './components/ParentJournal';
 import AthleteToday from './components/AthleteToday';
 import CoachGroups from './components/CoachGroups';
+import PendingLinks from './components/PendingLinks';
 
 /** Date du jour au format ISO, pour comparer à sessions.date. */
 function todayISO() {
@@ -449,6 +450,7 @@ export default function Home() {
       {staff && (
         <>
           {player && <div style={{ borderTop: '1px solid var(--border)', margin: '20px 0 4px' }} />}
+          <PendingLinks />
           <CoachGroups
             todayLabel={todayLabel}
             coachName={userName} roleLine={roleLine}

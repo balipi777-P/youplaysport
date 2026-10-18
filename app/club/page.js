@@ -20,6 +20,7 @@ import { useT } from '../../lib/i18n';
 import { getStored, KEY_CLUB } from '../../lib/spaces';
 import Icon from '../components/Icon';
 import ClubAvatar from '../components/ClubAvatar';
+import { PendingLinksList } from '../components/PendingLinks';
 import { useMyName, firstNameOf, initialsOfName } from '../../lib/userName';
 import { BrandingEditor, ClubWelcome, MartialDiscipline, isMartialSport, isHex, darken } from '../components/ClubBranding';
 
@@ -112,29 +113,6 @@ function downloadCsvTemplate() {
 function countCsvRows(text) {
   const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
   return Math.max(0, lines.length - 1);
-}
-
-/** Ancienneté d'une demande, en clé de traduction + quantité. */
-function since(iso) {
-  const ms = Date.now() - new Date(iso).getTime();
-  if (Number.isNaN(ms)) return null;
-  const d = Math.floor(ms / 86400000);
-  if (d >= 1) return { key: d === 1 ? 'adm.lic.sinceDay' : 'adm.lic.sinceDays', n: d };
-  const h = Math.floor(ms / 3600000);
-  if (h >= 1) return { key: h === 1 ? 'adm.lic.sinceHour' : 'adm.lic.sinceHours', n: h };
-  return { key: 'adm.lic.sinceNow', n: 0 };
-}
-
-/** Âge révolu à partir d'une date de naissance, ou null si elle manque. */
-function ageOf(birthdate) {
-  if (!birthdate) return null;
-  const b = new Date(`${birthdate}T12:00:00`);
-  if (Number.isNaN(b.getTime())) return null;
-  const now = new Date();
-  let a = now.getFullYear() - b.getFullYear();
-  const m = now.getMonth() - b.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) a -= 1;
-  return a >= 0 ? a : null;
 }
 
 /** Jours pleins entre aujourd'hui et une date, jamais négatif. */
@@ -873,52 +851,7 @@ export default function Club() {
 
   const pendingCard = () => panel(t('adm.lic.pending'), (
     <>
-      {pendings.length === 0 && (
-        <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6 }}>{t('adm.lic.noPending')}</div>
-      )}
-      {pendings.map((p, i) => {
-        const ago = since(p.requested_at);
-        const age = ageOf(p.birthdate);
-        /* Sans email, la demande ne vient d'aucun parent : c'est le licencié
-           lui-même qui réclame son compte. */
-        const self = !p.parent_email;
-        const who = `${p.first_name || ''} ${p.last_name || ''}`.trim() || t('adm.lic.unknownAthlete');
-        const title = self
-          ? (age === null ? t('adm.lic.selfRequest') : t('adm.lic.selfRequestAge', { n: age }))
-          : `${who} ← ${p.parent_email}`;
-        /* Le titre d'une demande autonome ne nomme pas l'athlète : on le remet
-           ici, sinon la ligne ne dit pas de qui il s'agit. */
-        const sub = [
-          t('adm.lic.parentRequest'),
-          self ? who : '',
-          [p.club_name, p.team_name].filter(Boolean).join(' · '),
-          ago ? t(ago.key, { n: ago.n }) : '',
-        ].filter(Boolean).join(' · ');
-        const wait = linkBusy === p.link_id;
-        return (
-          <div key={p.link_id} style={{ borderTop: i ? '1px solid var(--border)' : 'none', padding: '10px 0' }}>
-            <div style={{ fontSize: 13.5, fontWeight: 700, overflowWrap: 'anywhere' }}>{title}</div>
-            {sub && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>{sub}</div>}
-            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-              <button type="button" className="btn" disabled={wait}
-                onClick={() => decideLink(p.link_id, true)}
-                style={{ width: 'auto', padding: '8px 13px', fontSize: 12.5,
-                  opacity: wait ? 0.5 : 1, cursor: wait ? 'not-allowed' : 'pointer' }}>
-                {t('adm.lic.validate')}
-              </button>
-              <button type="button" className="btn ghost" disabled={wait}
-                onClick={() => decideLink(p.link_id, false)}
-                style={{ width: 'auto', padding: '8px 13px', fontSize: 12.5,
-                  opacity: wait ? 0.5 : 1, cursor: wait ? 'not-allowed' : 'pointer' }}>
-                {t('adm.lic.reject')}
-              </button>
-            </div>
-          </div>
-        );
-      })}
-      <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginTop: 10 }}>
-        {t('adm.lic.pendingNote')}
-      </div>
+      <PendingLinksList pendings={pendings} busy={linkBusy} onDecide={decideLink} />
     </>
   ));
 
