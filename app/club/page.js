@@ -18,18 +18,19 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
 import { getStored, KEY_CLUB } from '../../lib/spaces';
+import Icon from '../components/Icon';
 
 /* Les 8 entrées de la barre latérale. Chacune ouvre une section réellement
    adossée à une table : rien ne mène à un écran vide sans explication. */
 const NAV = [
-  { key: 'teams', icon: '👥' },
-  { key: 'athletes', icon: '🏃' },
-  { key: 'coaches', icon: '📣' },
-  { key: 'licences', icon: '🗂️' },
-  { key: 'seasons', icon: '🗓️' },
-  { key: 'documents', icon: '📄' },
-  { key: 'branding', icon: '🎨' },
-  { key: 'support', icon: '💬' },
+  { key: 'teams', icon: 'groups' },
+  { key: 'athletes', icon: 'user' },
+  { key: 'coaches', icon: 'events' },
+  { key: 'licences', icon: 'folder' },
+  { key: 'seasons', icon: 'calendar' },
+  { key: 'documents', icon: 'file' },
+  { key: 'branding', icon: 'palette' },
+  { key: 'support', icon: 'chat' },
 ];
 
 /* Teintes de pastille par catégorie, reprises des cartes de groupe du coach
@@ -393,6 +394,23 @@ export default function Club() {
     })();
   }, [router, loadTeams, loadPendings]);
 
+  /* Menu mobile : Échap et passage en desktop le referment ; le scroll de la page
+     n'est verrouillé que le temps où le tiroir est ouvert, et toujours rétabli. */
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e) => { if (e.key === 'Escape') setMenuOpen(false); };
+    const onResize = () => { if (window.innerWidth > 900) setMenuOpen(false); };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onResize);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [menuOpen]);
+
   /* Première équipe dépliée par défaut, tant que l'utilisateur n'a rien touché. */
   const [touched, setTouched] = useState(false);
   useEffect(() => {
@@ -514,6 +532,8 @@ export default function Club() {
       display: flex; flex-direction: column; gap: 16px; }
     .cons-main { flex: 1; min-width: 0; padding: 28px 32px 64px; max-width: 1240px; }
     .cons-burger { display: none; }
+    .cons-backdrop { display: none; }
+    .cons-fold { flex: 1; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
     .cons-grid { display: grid; grid-template-columns: minmax(0, 1.85fr) minmax(0, 1fr); gap: 14px; align-items: start; }
     .cons-row { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 2fr) 104px 88px; gap: 10px; align-items: center; }
     .cons-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
@@ -522,9 +542,15 @@ export default function Club() {
     @media (max-width: 1080px) { .cons-grid { grid-template-columns: 1fr; } }
     @media (max-width: 900px) {
       .cons { display: block; }
-      .cons-side { position: static; width: auto; height: auto; flex: none;
-        border-right: none; border-bottom: 1px solid var(--border); padding: 14px 16px; }
-      .cons-side[data-open="false"] .cons-fold { display: none; }
+      .cons-side { position: sticky; top: 0; z-index: 30; width: auto; height: auto; flex: none;
+        border-right: none; border-bottom: 1px solid var(--border); padding: 10px 16px; }
+      .cons-fold { position: fixed; top: 0; left: 0; bottom: 0; width: min(300px, 86vw); z-index: 2;
+        background: #fff; padding: 20px 16px 22px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+        box-shadow: 4px 0 24px rgba(0,0,0,.14); transform: translateX(-105%); visibility: hidden;
+        transition: transform .22s ease, visibility 0s linear .22s; }
+      .cons-side[data-open="true"] .cons-fold { transform: translateX(0); visibility: visible;
+        transition: transform .22s ease, visibility 0s; }
+      .cons-backdrop { display: block; position: fixed; inset: 0; z-index: 1; background: rgba(30,20,15,.4); }
       .cons-burger { display: inline-flex; }
       .cons-main { padding: 18px 16px 48px; }
       .cons-two { grid-template-columns: 1fr; }
@@ -1377,7 +1403,9 @@ export default function Club() {
             </button>
           </div>
 
-          <nav className="cons-fold" style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {menuOpen && <div className="cons-backdrop" onClick={() => setMenuOpen(false)} aria-hidden="true" />}
+          <div className="cons-fold">
+          <nav style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             {NAV.map((item) => {
               const on = section === item.key;
               return (
@@ -1388,7 +1416,7 @@ export default function Club() {
                     border: 'none', borderRadius: 13, padding: '10px 12px', cursor: 'pointer', fontFamily: 'inherit',
                     fontSize: 13.5, fontWeight: 700,
                     background: on ? 'var(--brand)' : 'transparent', color: on ? '#fff' : '#6B6357' }}>
-                  <span aria-hidden="true" style={{ fontSize: 15, opacity: on ? 1 : 0.8 }}>{item.icon}</span>
+                  <span aria-hidden="true" style={{ display: 'inline-flex', opacity: on ? 1 : 0.8 }}><Icon name={item.icon} size={18} /></span>
                   <span style={{ flex: 1, minWidth: 0 }}>{t(`adm.nav.${item.key}`)}</span>
                   {counts[item.key] !== null && counts[item.key] > 0 && (
                     <span style={{ fontSize: 11.5, fontWeight: 700, opacity: on ? 0.9 : 0.65 }}>{counts[item.key]}</span>
@@ -1398,7 +1426,7 @@ export default function Club() {
             })}
           </nav>
 
-          <div className="cons-fold" style={{ marginTop: 'auto', display: 'grid', gap: 10 }}>
+          <div style={{ marginTop: 'auto', display: 'grid', gap: 10 }}>
             {/* Code d'invitation : le dirigeant le donne aux coachs et aux familles. */}
             {club.join_code && (
               <div style={{ background: 'var(--peach)', borderRadius: 14, padding: '10px 12px',
@@ -1442,6 +1470,7 @@ export default function Club() {
                 fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '2px 0', textAlign: 'left' }}>
               {t('common.logout')}
             </button>
+          </div>
           </div>
         </aside>
 
