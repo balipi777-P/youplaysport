@@ -1,6 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import Icon from './Icon';
+import Accordion from './Accordion';
 import { useT } from '../../lib/i18n';
 
 /* Vue « Journée sportive » du parent. Composant purement présentatif : toutes les
@@ -60,6 +62,9 @@ export default function ParentJournal({
   onSwitchChild, onAlerts, onAdd, onCarnet, onAgenda,
 }) {
   const { t, lang } = useT();
+  /* Une seule section ouverte à la fois ; le compte rendu l'est au départ. */
+  const [openKey, setOpenKey] = useState('report');
+  const toggle = (k) => setOpenKey((cur) => (cur === k ? null : k));
 
   const mot = session?.messages?.find((m) => m.type === 'mot_coach');
   const objectif = session?.messages?.find((m) => m.type === 'objectif');
@@ -223,9 +228,10 @@ export default function ParentJournal({
           )}
 
           {/* ---- Compte rendu de séance ---- */}
-          <div className="card">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-              <SectionLabel>{t('journal.report')}</SectionLabel>
+          <Accordion open={openKey === 'report'} onToggle={() => toggle('report')}
+            title={t('journal.report')}
+            summary={[session.theme, dayLong(session.date, lang)].filter(Boolean).join(' · ')}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
               {clubName && (
                 <span style={{ background: 'var(--peach)', color: '#5F2A1C', borderRadius: 999,
                   padding: '4px 10px', fontSize: 10.5, fontWeight: 800, whiteSpace: 'nowrap' }}>
@@ -284,12 +290,12 @@ export default function ParentJournal({
                 </div>
               </>
             )}
-          </div>
+          </Accordion>
 
           {/* ---- Défi de la semaine ---- */}
           {defi && (
-            <div className="card" style={{ background: GREEN_BG, border: 'none' }}>
-              <SectionLabel style={{ color: GREEN_SOFT, marginBottom: 10 }}>{t('journal.challenge')}</SectionLabel>
+            <Accordion tone="green" open={openKey === 'defi'} onToggle={() => toggle('defi')}
+              title={t('journal.challenge')} summary={defi.name}>
               <Chip tone="white">🏠 {t('journal.atHome')}</Chip>
               <div className="q" style={{ fontWeight: 800, fontSize: 16, color: GREEN_INK, margin: '10px 0 0' }}>
                 {defi.name}
@@ -315,14 +321,15 @@ export default function ParentJournal({
               <div style={{ fontSize: 11.5, color: GREEN_SOFT, opacity: .85, lineHeight: 1.5, marginTop: 14 }}>
                 {t('journal.noReturn')}
               </div>
-            </div>
+            </Accordion>
           )}
 
           {/* ---- Fil de la séance ---- */}
           {timeline.length > 0 && (
-            <div className="card">
-              <SectionLabel style={{ marginBottom: 14 }}>{t('journal.timeline')}</SectionLabel>
-              <div style={{ paddingLeft: 20 }}>
+            <Accordion open={openKey === 'timeline'} onToggle={() => toggle('timeline')}
+              title={t('journal.timeline')}
+              summary={t(timeline.length === 1 ? 'journal.tlCountOne' : 'journal.tlCountMany', { n: timeline.length })}>
+              <div style={{ paddingLeft: 20, paddingTop: 6 }}>
                 {timeline.map((it, i) => (
                   <div key={i} style={{ position: 'relative', paddingBottom: i === timeline.length - 1 ? 0 : 18 }}>
                     <span style={{ position: 'absolute', left: -17, top: 4, width: 10, height: 10,
@@ -353,7 +360,7 @@ export default function ParentJournal({
                   </div>
                 ))}
               </div>
-            </div>
+            </Accordion>
           )}
         </>
       )}

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
 import { getStored, KEY_TEAM } from '../../lib/spaces';
+import Accordion from '../components/Accordion';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 
 /* Écran Séance du coach : de la saisie jusqu'au compte rendu publié.
@@ -52,6 +53,9 @@ export default function Seance() {
   const router = useRouter();
   const { t, lang } = useT();
   const [ready, setReady] = useState(false);
+  /* Étape ouverte (une seule à la fois) : Équipe → Date/horaires → Thème → Fiche. */
+  const [openStep, setOpenStep] = useState('team');
+  const toggleStep = (k) => setOpenStep((cur) => (cur === k ? null : k));
   const [teams, setTeams] = useState([]);
   const [teamId, setTeamId] = useState('');
   const [team, setTeam] = useState(null);
@@ -345,12 +349,20 @@ export default function Seance() {
           {err && <div className="error">{err}</div>}
           {ok && <div className="pill" style={{ marginBottom: 12 }}>{ok}</div>}
 
-          {/* ===== 1. Quand, et avec qui ===== */}
-          <div className="card">
-            {step(1, t('evt.team'))}
+          {/* ===== 1 à 4. Équipe, date/horaires, thème, fiche : étapes qui se déroulent une à une ===== */}
+          <Accordion number={1} open={openStep === 'team'} onToggle={() => toggleStep('team')}
+            title={t('evt.team')} summary={team?.name}>
             <select className="input" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
               {teams.map((tm) => <option key={tm.id} value={tm.id}>{tm.name}</option>)}
             </select>
+            <button type="button" className="btn" style={{ marginBottom: 0 }} onClick={() => setOpenStep('when')}>
+              {t('sea.next')}
+            </button>
+          </Accordion>
+
+          <Accordion number={2} open={openStep === 'when'} onToggle={() => toggleStep('when')}
+            title={`${t('sea.date')} / ${t('sea.hours')}`}
+            summary={[dateLabel, [startTime, endTime].filter(Boolean).join(' – ')].filter(Boolean).join(' · ')}>
             <div className="label" style={{ marginBottom: 6 }}>{t('sea.date')}</div>
             <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             <div className="label" style={{ marginBottom: 6 }}>{t('sea.hours')}</div>
@@ -360,11 +372,13 @@ export default function Seance() {
               <input className="input" type="time" style={{ marginBottom: 0, flex: 1 }} value={endTime}
                 onChange={(e) => setEndTime(e.target.value)} aria-label={t('sea.endTime')} />
             </div>
-          </div>
+            <button type="button" className="btn" style={{ marginTop: 12, marginBottom: 0 }} onClick={() => setOpenStep('theme')}>
+              {t('sea.next')}
+            </button>
+          </Accordion>
 
-          {/* ===== 2. Thème ===== */}
-          <div className="card">
-            {step(2, t('sea.theme'))}
+          <Accordion number={3} open={openStep === 'theme'} onToggle={() => toggleStep('theme')}
+            title={t('sea.theme')} summary={themeCustom.trim() || theme || '—'}>
             {themes.length > 0 ? (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 10 }}>
                 {themes.map((th) => (
@@ -381,10 +395,15 @@ export default function Seance() {
             )}
             <input className="input" value={themeCustom} onChange={(e) => setThemeCustom(e.target.value)}
               placeholder={t('sea.themeCustomPh')} />
+            <button type="button" className="btn" style={{ marginBottom: 0 }} onClick={() => setOpenStep('sheet')}>
+              {t('sea.next')}
+            </button>
+          </Accordion>
 
-            {/* Dépôt de fiche : visuel. documents n'est ouvert en écriture qu'au
-                dirigeant du club (doc_write), et aucun stockage n'est branché. */}
-            <div className="label" style={{ marginBottom: 6 }}>{t('sea.sheet')}</div>
+          {/* Dépôt de fiche : visuel. documents n'est ouvert en écriture qu'au
+              dirigeant du club (doc_write), et aucun stockage n'est branché. */}
+          <Accordion number={4} open={openStep === 'sheet'} onToggle={() => toggleStep('sheet')}
+            title={t('sea.sheet')} summary={t('sea.sheetDrop')}>
             <div style={{ border: '1.5px dashed var(--border)', borderRadius: 16, padding: '20px 14px',
               textAlign: 'center', background: '#FCF9F6' }}>
               <div aria-hidden="true" style={{ fontSize: 22, lineHeight: 1 }}>📄</div>
@@ -395,12 +414,12 @@ export default function Seance() {
                 {t('sea.sheetSoon')}
               </div>
             </div>
-          </div>
+          </Accordion>
 
           {/* ===== 3. Présences ===== */}
           <div className="card" id="presences">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-              {step(3, t('sea.presence'))}
+              {step(5, t('sea.presence'))}
               {teamPlayers.length > 0 && badge(t('coach.presentOf', { n: presentCount, total: teamPlayers.length }))}
             </div>
             {teamPlayers.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('sea.noMembers')}</div>}
@@ -442,7 +461,7 @@ export default function Seance() {
 
           {/* ===== 4. Compétences validées pour le groupe ===== */}
           <div className="card" id="competences">
-            {step(4, t('sea.skillsGroup'), <span style={{ textTransform: 'none', fontWeight: 500, color: 'var(--muted)' }}> {t('sea.optional')}</span>)}
+            {step(6, t('sea.skillsGroup'), <span style={{ textTransform: 'none', fontWeight: 500, color: 'var(--muted)' }}> {t('sea.optional')}</span>)}
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
               {t('sea.skillsGroupHint')}
             </div>
@@ -496,7 +515,7 @@ export default function Seance() {
           {/* ===== 5. Au programme (axes) ===== */}
           <div className="card">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-              {step(5, t('home.program'))}
+              {step(7, t('home.program'))}
               {badge(t(axisCount === 1 ? 'sea.axisBadgeOne' : 'sea.axisBadgeMany', { n: axisCount }))}
             </div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>{t('sea.programHint')}</div>
@@ -529,7 +548,7 @@ export default function Seance() {
           {/* ===== 6. Défi de la semaine ===== */}
           <div className="card" style={{ background: GREEN.bg, border: `1px solid ${GREEN.line}` }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-              {step(6, t('sea.challenge'))}
+              {step(8, t('sea.challenge'))}
               {sportName && badge(t('sea.library', { sport: sportName }))}
             </div>
             {challenges.length > 0 ? (
@@ -562,7 +581,7 @@ export default function Seance() {
 
           {/* ===== 7. Mot du coach + objectif ===== */}
           <div className="card">
-            {step(7, t('sea.motCoach'))}
+            {step(9, t('sea.motCoach'))}
             <input className="input" value={mot} onChange={(e) => setMot(e.target.value)} placeholder={t('sea.motPh')} />
             <div className="label" style={{ marginBottom: 6 }}>{t('sea.objective')}</div>
             <input className="input" value={objectif} onChange={(e) => setObjectif(e.target.value)}
