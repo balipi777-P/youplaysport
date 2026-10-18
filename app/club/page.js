@@ -468,6 +468,43 @@ export default function Club() {
     } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
   }
 
+  /** Les RPC de démo renvoient du jsonb ; not_authorized devient un message amical. */
+  function demoError(e) {
+    if (`${(e && e.message) || ''}`.includes('not_authorized')) return t('club.demoNotAuthorized');
+    return friendlyError(e, t('club.errGeneric'));
+  }
+
+  async function refreshAfterDemo() {
+    await loadTeams(club.id);
+    await loadPendings();
+    setDetails({});
+    setEveryone(null);
+  }
+
+  async function seedDemo() {
+    setErr(''); setBusy(true);
+    try {
+      const { data, error } = await withTimeout(
+        supabase.schema('yps').rpc('seed_my_club_demo', { p_club: club.id }));
+      if (error) throw error;
+      if (data?.status === 'already') flash(t('club.demoAlready'));
+      else flash(t('club.demoCreated', { teams: data?.teams ?? 0, players: data?.players ?? 0 }));
+      await refreshAfterDemo();
+    } catch (e) { setErr(demoError(e)); } finally { setBusy(false); }
+  }
+
+  async function clearDemo() {
+    if (!window.confirm(t('club.demoClearConfirm'))) return;
+    setErr(''); setBusy(true);
+    try {
+      const { data, error } = await withTimeout(
+        supabase.schema('yps').rpc('clear_my_club_demo', { p_club: club.id }));
+      if (error) throw error;
+      flash(t('club.demoCleared', { teams: data?.teams ?? 0, players: data?.players ?? 0 }));
+      await refreshAfterDemo();
+    } catch (e) { setErr(demoError(e)); } finally { setBusy(false); }
+  }
+
   async function addPlayer() {
     setErr(''); setBusy(true);
     try {
@@ -1045,9 +1082,14 @@ export default function Club() {
         <div className="card" style={{ background: 'var(--peach)', border: 'none' }}>
           <div className="q" style={{ fontWeight: 700, fontSize: 14, color: '#5F2A1C', marginBottom: 4 }}>{t('club.demoTitle')}</div>
           <div style={{ fontSize: 12.5, color: '#7A4030', marginBottom: 10, lineHeight: 1.55 }}>{t('club.demoDesc')}</div>
-          <button className="btn ghost" style={{ width: 'auto', padding: '11px 16px' }} disabled>
-            {t('club.demoSoon')}
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn ghost" style={{ width: 'auto', padding: '11px 16px' }} disabled={busy} onClick={seedDemo}>
+              {busy ? '…' : t('club.demoBtn')}
+            </button>
+            <button className="btn ghost" style={{ width: 'auto', padding: '11px 16px' }} disabled={busy} onClick={clearDemo}>
+              {t('club.demoClearBtn')}
+            </button>
+          </div>
         </div>
       </>
     );
