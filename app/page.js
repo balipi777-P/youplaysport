@@ -64,7 +64,7 @@ export default function Home() {
       .from('sessions')
       .select('id, date, start_time, end_time, theme, session_axes(axis, comment), session_challenge(name, home_exercise, competence, tip), messages(type, body, created_at)')
       .eq('team_id', p.team_id).not('published_at', 'is', null)
-      .order('date', { ascending: false }).limit(1);
+      .order('published_at', { ascending: false }).order('created_at', { ascending: false }).limit(1);
     let s = sessions && sessions[0];
     if (s) {
       const { data: rep } = await supabase.schema('yps').from('session_reports')
