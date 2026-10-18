@@ -19,6 +19,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
 import { getStored, KEY_CLUB } from '../../lib/spaces';
 import Icon from '../components/Icon';
+import ClubAvatar from '../components/ClubAvatar';
 import { BrandingEditor, ClubWelcome, MartialDiscipline, isMartialSport, isHex, darken } from '../components/ClubBranding';
 
 /* Les 8 entrées de la barre latérale. Chacune ouvre une section réellement
@@ -933,13 +934,8 @@ export default function Club() {
     return panel(t('adm.lic.branding'), (
       <>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-          <span className="q" style={{ width: 48, height: 48, flex: '0 0 48px', borderRadius: 16,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
-            fontWeight: 800, fontSize: 16, background: club.accent_color || 'var(--brand)',
-            backgroundImage: club.logo_url ? `url(${club.logo_url})` : 'none',
-            backgroundSize: 'cover', backgroundPosition: 'center' }}>
-            {club.logo_url ? '' : initials(club.name)}
-          </span>
+          <ClubAvatar name={club.name} logoUrl={club.logo_url} color={club.accent_color || 'var(--brand)'}
+            size={48} radius={16} fontSize={16} />
           <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {tones.length === 0 && (
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>{t('adm.lic.noSportTone')}</span>
@@ -1455,11 +1451,7 @@ export default function Club() {
         {/* ===================== Barre latérale ===================== */}
         <aside className="cons-side" data-open={menuOpen ? 'true' : 'false'}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span className="q" style={{ width: 44, height: 44, flex: '0 0 44px', borderRadius: 15,
-              background: 'var(--brand)', color: '#fff', display: 'inline-flex', alignItems: 'center',
-              justifyContent: 'center', fontWeight: 800, fontSize: 16, letterSpacing: '.5px' }}>
-              {initials(club.name)}
-            </span>
+            <ClubAvatar name={club.name} logoUrl={club.logo_url} size={44} radius={15} fontSize={16} />
             <span style={{ flex: 1, minWidth: 0 }}>
               <span className="q" style={{ display: 'block', fontWeight: 700, fontSize: 16, letterSpacing: '-0.3px' }}>
                 {club.name}

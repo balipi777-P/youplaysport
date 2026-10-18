@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
 import Icon from './Icon';
+import ClubAvatar from './ClubAvatar';
 import {
   fetchMySpaces, listSpaces, validStoredSpace, contextOptions, enterSpace,
   getStored, setStored, clearSpaceStorage, CONTEXT_KEY, CONTEXT_EVENT, SPACE_HOME, KEY_SPACE,
@@ -23,6 +24,7 @@ export default function SpaceBar() {
   const [data, setData] = useState(null);
   const [space, setSpace] = useState('');
   const [ctx, setCtx] = useState('');
+  const [clubLogo, setClubLogo] = useState({ id: '', url: '', name: '' });
 
   const refresh = useCallback(async () => {
     const { data: s } = await supabase.auth.getSession();
@@ -33,6 +35,16 @@ export default function SpaceBar() {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh, pathname]);
+
+  /* Logo du club courant (espace dirigeant) : l'RPC des espaces ne le renvoie pas,
+     on le lit dans clubs. Repli sur les initiales si absent. */
+  useEffect(() => {
+    if (space !== 'admin' || !ctx) { setClubLogo({ id: '', url: '', name: '' }); return undefined; }
+    let alive = true;
+    supabase.from('clubs').select('name, logo_url').eq('id', ctx).maybeSingle()
+      .then(({ data: c }) => { if (alive) setClubLogo({ id: ctx, url: c?.logo_url || '', name: c?.name || '' }); });
+    return () => { alive = false; };
+  }, [space, ctx, pathname]);
 
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
@@ -99,6 +111,9 @@ export default function SpaceBar() {
             </select>
             <Icon name="chevron" size={14} strokeWidth={2} style={chev} />
           </span>
+        )}
+        {space === 'admin' && clubLogo.id === ctx && clubLogo.name && (
+          <ClubAvatar name={clubLogo.name} logoUrl={clubLogo.url} size={26} radius={9} fontSize={10} />
         )}
         {opts.length > 1 && (
           <span style={wrapSel}>

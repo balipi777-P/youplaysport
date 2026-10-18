@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { loadMyChildren } from '../../lib/children';
 import { useT, LangToggle } from '../../lib/i18n';
+import ClubAvatar from '../components/ClubAvatar';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 
 /* Ajouter un enfant · rejoindre un club.
@@ -177,6 +178,8 @@ export default function AjouterEnfant() {
     if (!name || clubs.some((x) => x.name === name)) continue;
     clubs.push({
       name,
+      logo: c.teams?.clubs?.logo_url || '',
+      color: c.teams?.clubs?.accent_color || '',
       child: c.first_name || '',
       category: c.teams?.category || '',
       sport: sportName(c.teams?.sports),
@@ -302,11 +305,8 @@ export default function AjouterEnfant() {
         {found && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12,
             background: GREEN.bg, border: `1px solid ${GREEN.line}`, borderRadius: 14, padding: '10px 12px' }}>
-            <span className="q" style={{ width: 34, height: 34, flex: '0 0 34px', borderRadius: 11,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800,
-              color: '#fff', background: found.accent_color || GREEN.ink }}>
-              {initials(found.club_name)}
-            </span>
+            <ClubAvatar name={found.club_name} logoUrl={found.logo_url} color={found.accent_color || GREEN.ink}
+              size={34} radius={11} fontSize={12} />
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 13.5, fontWeight: 700 }}>{found.club_name}</div>
               <div style={{ fontSize: 11.5, color: GREEN.ink }}>
@@ -537,11 +537,7 @@ export default function AjouterEnfant() {
           <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 11,
             borderTop: i ? '1px solid var(--border)' : 'none', padding: i ? '11px 0 0' : 0,
             marginTop: i ? 11 : 14 }}>
-            <div style={{ width: 38, height: 38, borderRadius: 12, background: '#F4F0E9',
-              color: '#6B6558', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontWeight: 800, fontSize: 13, flexShrink: 0 }}>
-              {initials(c.name)}
-            </div>
+            <ClubAvatar name={c.name} logoUrl={c.logo} color={c.color || '#B9B2A4'} size={38} radius={12} fontSize={13} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 700 }}>{c.name}</div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
