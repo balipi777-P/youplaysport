@@ -165,6 +165,11 @@ export default function Profil() {
   if (!player) return (
     <div className="wrap" style={{ paddingBottom: BOTTOM_NAV_HEIGHT + 24 }}>
       <div className="card"><p style={{ margin: 0, color: 'var(--muted)' }}>{t('common.noChild')}</p></div>
+      <div className="card">
+        <a href="#" onClick={(e) => { e.preventDefault(); router.push('/mes-donnees'); }}
+          style={{ fontWeight: 700, fontSize: 14 }}>{t('mydata.link')} →</a>
+      </div>
+
       <BottomNav role="parent" />
     </div>
   );

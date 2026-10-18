@@ -9,12 +9,8 @@ const BLOCKS = ['b1', 'b2', 'b3', 'b4', 'b5'];
 export default function Confidentialite() {
   const router = useRouter();
   const { t } = useT();
-  const [notice, setNotice] = useState('');
 
   useEffect(() => { document.title = `${t('priv.tab')} · YouPlaySport`; }, [t]);
-
-  /* Boutons encore visuels : le traitement réel viendra avec le câblage. */
-  function comingSoon() { setNotice(t('priv.soon')); }
 
   return (
     <div className="pub">
@@ -57,19 +53,18 @@ export default function Confidentialite() {
           <div className="card">
             <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>{t('priv.export.t')}</div>
             <p style={{ fontSize: 13, color: '#5A554B', lineHeight: 1.55, margin: '0 0 14px' }}>{t('priv.export.d')}</p>
-            <button type="button" className="btn" onClick={comingSoon}>{t('priv.export.cta')}</button>
+            <button type="button" className="btn" onClick={() => router.push('/mes-donnees')}>{t('priv.export.cta')}</button>
           </div>
 
           <div className="card">
             <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>{t('priv.delete.t')}</div>
             <p style={{ fontSize: 13, color: '#5A554B', lineHeight: 1.55, margin: '0 0 14px' }}>{t('priv.delete.d')}</p>
-            <button type="button" className="btn" onClick={comingSoon}
+            <button type="button" className="btn" onClick={() => router.push('/mes-donnees')}
               style={{ background: 'transparent', color: '#C0392B', border: '1.5px solid #C0392B' }}>
               {t('priv.delete.cta')}
             </button>
           </div>
 
-          {notice && <div className="pill">{notice}</div>}
         </div>
       </div>
 
