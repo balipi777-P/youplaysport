@@ -7,7 +7,7 @@ import { useT } from '../../lib/i18n';
 import Icon from './Icon';
 import {
   fetchMySpaces, listSpaces, validStoredSpace, contextOptions, enterSpace,
-  getStored, setStored, clearSpaceStorage, CONTEXT_KEY, SPACE_HOME, KEY_SPACE,
+  getStored, setStored, clearSpaceStorage, CONTEXT_KEY, CONTEXT_EVENT, SPACE_HOME, KEY_SPACE,
 } from '../../lib/spaces';
 
 /* Pages sans compte connecté (ou qui aiguillent elles-mêmes). */
@@ -45,6 +45,18 @@ export default function SpaceBar() {
   useEffect(() => {
     setCtx(space && CONTEXT_KEY[space] ? getStored(CONTEXT_KEY[space]) : '');
   }, [space, data]);
+
+  /* Le contexte peut changer ailleurs (carte enfant, autre onglet) : on relit le stockage. */
+  useEffect(() => {
+    if (!space || !CONTEXT_KEY[space]) return undefined;
+    const sync = () => setCtx(getStored(CONTEXT_KEY[space]));
+    window.addEventListener(CONTEXT_EVENT, sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener(CONTEXT_EVENT, sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, [space]);
 
   if (!data || HIDDEN.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return null;
   const spaces = listSpaces(data);
