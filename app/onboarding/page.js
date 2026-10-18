@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { useT, LangToggle } from '../../lib/i18n';
+import {
+  fetchMySpaces, listSpaces, validStoredSpace, enterSpace, setStored, KEY_SPACE, KEY_CLUB,
+} from '../../lib/spaces';
 
 const ROLE_KEYS = [
   { key: 'parent', emoji: '👨‍👩‍👧' },
@@ -28,24 +31,50 @@ export default function Onboarding() {
     (async () => {
       const { data } = await supabase.auth.getSession();
       if (!data.session) { router.replace('/login'); return; }
+      /* Déjà au moins un espace : le chooser n'a plus lieu d'être, on entre dans l'espace. */
+      const d = await fetchMySpaces();
+      const spaces = listSpaces(d);
+      if (spaces.length > 0) {
+        const space = validStoredSpace(d) || spaces[0];
+        window.location.replace(enterSpace(space, d));
+        return;
+      }
       setReady(true);
     })();
   }, [router]);
 
   function pickRole(r) { setRole(r); setErr(''); setStep('club'); }
 
+  /** Retient l'espace (et le club rejoint si la RPC l'indique), puis entre dans l'espace sans repasser par le chooser. */
+  async function enterAfter(space, result) {
+    const clubId = result && typeof result === 'object' && !Array.isArray(result)
+      ? (result.club_id || result.id || '') : (typeof result === 'string' ? result : '');
+    const d = await fetchMySpaces();
+    setStored(KEY_SPACE, space);
+    if (space === 'admin' || space === 'coach') {
+      if (clubId && space === 'admin') setStored(KEY_CLUB, clubId);
+    }
+    /* enterSpace complète le contexte (enfant / équipe / club) quand my_spaces le connaît. */
+    const href = d && listSpaces(d).includes(space) ? enterSpace(space, d) : '/';
+    window.location.replace(href);
+  }
+
   async function submit() {
     setErr(''); setBusy(true);
     try {
       if (role === 'dirigeant') {
         if (!clubName.trim()) throw new Error(t('onb.errClubName'));
-        const { error } = await supabase.rpc('create_club', { p_name: clubName.trim() });
+        const { data: created, error } = await supabase.rpc('create_club', { p_name: clubName.trim() });
         if (error) throw error;
+        await enterAfter('admin', created);
+        return;
       } else {
         if (role === 'parent' && !consent) throw new Error(t('onb.errConsent'));
         if (!clubCode.trim()) throw new Error(t('onb.errCode'));
-        const { error } = await supabase.rpc('join_club', { p_code: clubCode.trim(), p_role: role });
+        const { data: joined, error } = await supabase.rpc('join_club', { p_code: clubCode.trim(), p_role: role });
         if (error) throw error;
+        await enterAfter(role, joined);
+        return;
       }
       router.replace('/');
     } catch (e) {
