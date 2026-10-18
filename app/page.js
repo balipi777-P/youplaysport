@@ -62,16 +62,12 @@ export default function Home() {
     }
     const { data: sessions } = await supabase
       .from('sessions')
-      .select('id, date, start_time, end_time, theme, session_axes(axis, comment), session_challenge(name, home_exercise, competence, tip), messages(type, body, created_at)')
+      .select('id, date, start_time, end_time, theme, published_at, created_at, session_axes(axis, comment), session_challenge(name, home_exercise, competence, tip), messages(type, body, created_at)')
       .eq('team_id', p.team_id).not('published_at', 'is', null)
-      .order('published_at', { ascending: false }).order('created_at', { ascending: false }).limit(1);
-    let s = sessions && sessions[0];
-    if (s) {
-      const { data: rep } = await supabase.schema('yps').from('session_reports')
-        .select('coach_word, weekly_goal, challenge_name, challenge_exercise, challenge_skill, challenge_tip')
-        .eq('session_id', s.id).maybeSingle();
-      s = { ...s, session_reports: rep || null };
-    }
+      .order('published_at', { ascending: false }).order('created_at', { ascending: false }).limit(20);
+    const byRecent = (a, b) => (Date.parse(b.published_at) || 0) - (Date.parse(a.published_at) || 0)
+      || (Date.parse(b.created_at) || 0) - (Date.parse(a.created_at) || 0);
+    const s = (sessions || []).slice().sort(byRecent)[0];
     setSession(s || null);
     if (s) {
       const { data: att } = await supabase.from('attendance').select('status, timestamped_at')

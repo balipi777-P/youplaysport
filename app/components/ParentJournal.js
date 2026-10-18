@@ -67,14 +67,9 @@ export default function ParentJournal({
   const [openKey, setOpenKey] = useState('report');
   const toggle = (k) => setOpenKey((cur) => (cur === k ? null : k));
 
-  const rep = session?.session_reports;
-  const mot = rep?.coach_word ? { body: rep.coach_word, created_at: session?.messages?.find((m) => m.type === 'mot_coach')?.created_at }
-    : session?.messages?.find((m) => m.type === 'mot_coach');
-  const objectif = rep?.weekly_goal ? { body: rep.weekly_goal, created_at: session?.messages?.find((m) => m.type === 'objectif')?.created_at }
-    : session?.messages?.find((m) => m.type === 'objectif');
-  const defi = session?.session_challenge
-    || (rep?.challenge_name ? { name: rep.challenge_name, home_exercise: rep.challenge_exercise,
-      competence: rep.challenge_skill, tip: rep.challenge_tip } : null);
+  const mot = session?.messages?.find((m) => m.type === 'mot_coach');
+  const objectif = session?.messages?.find((m) => m.type === 'objectif');
+  const defi = session?.session_challenge;
   const axes = session?.session_axes || [];
 
   const team = player?.teams;
