@@ -65,7 +65,13 @@ export default function Home() {
       .select('id, date, start_time, end_time, theme, session_axes(axis, comment), session_challenge(name, home_exercise, competence, tip), messages(type, body, created_at)')
       .eq('team_id', p.team_id).not('published_at', 'is', null)
       .order('date', { ascending: false }).limit(1);
-    const s = sessions && sessions[0];
+    let s = sessions && sessions[0];
+    if (s) {
+      const { data: rep } = await supabase.schema('yps').from('session_reports')
+        .select('coach_word, weekly_goal, challenge_name, challenge_exercise, challenge_skill, challenge_tip')
+        .eq('session_id', s.id).maybeSingle();
+      s = { ...s, session_reports: rep || null };
+    }
     setSession(s || null);
     if (s) {
       const { data: att } = await supabase.from('attendance').select('status, timestamped_at')

@@ -67,9 +67,14 @@ export default function ParentJournal({
   const [openKey, setOpenKey] = useState('report');
   const toggle = (k) => setOpenKey((cur) => (cur === k ? null : k));
 
-  const mot = session?.messages?.find((m) => m.type === 'mot_coach');
-  const objectif = session?.messages?.find((m) => m.type === 'objectif');
-  const defi = session?.session_challenge;
+  const rep = session?.session_reports;
+  const mot = rep?.coach_word ? { body: rep.coach_word, created_at: session?.messages?.find((m) => m.type === 'mot_coach')?.created_at }
+    : session?.messages?.find((m) => m.type === 'mot_coach');
+  const objectif = rep?.weekly_goal ? { body: rep.weekly_goal, created_at: session?.messages?.find((m) => m.type === 'objectif')?.created_at }
+    : session?.messages?.find((m) => m.type === 'objectif');
+  const defi = session?.session_challenge
+    || (rep?.challenge_name ? { name: rep.challenge_name, home_exercise: rep.challenge_exercise,
+      competence: rep.challenge_skill, tip: rep.challenge_tip } : null);
   const axes = session?.session_axes || [];
 
   const team = player?.teams;
@@ -296,6 +301,13 @@ export default function ParentJournal({
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 600, marginTop: 8 }}>
                   {[team?.category, clubName].filter(Boolean).join(' · ')}
                 </div>
+              </>
+            )}
+
+            {objectif && (
+              <>
+                <SectionLabel style={{ margin: '18px 0 10px' }}>{t('journal.tlGoal')}</SectionLabel>
+                <div style={{ fontSize: 13.5, lineHeight: 1.6, color: '#3D3A33' }}>🎯 {objectif.body}</div>
               </>
             )}
           </Accordion>

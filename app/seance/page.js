@@ -269,6 +269,14 @@ export default function Seance() {
         });
         if (error) throw error;
       }
+      {
+        const { error } = await supabase.schema('yps').from('session_reports').upsert({
+          session_id: sid, coach_word: mot.trim() || null, weekly_goal: objectif.trim() || null,
+          challenge_name: defi.name.trim() || null, challenge_exercise: defi.home_exercise || null,
+          challenge_skill: defi.competence || null, challenge_tip: defi.tip || null,
+        }, { onConflict: 'session_id' });
+        if (error) throw error;
+      }
       const msgs = [];
       if (mot.trim()) msgs.push({ session_id: sid, team_id: teamId, type: 'mot_coach', body: mot.trim(), author_user_id: uid });
       if (objectif.trim()) msgs.push({ session_id: sid, team_id: teamId, type: 'objectif', body: objectif.trim(), author_user_id: uid });
