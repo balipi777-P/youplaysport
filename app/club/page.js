@@ -19,6 +19,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
 import { getStored, KEY_CLUB } from '../../lib/spaces';
 import Icon from '../components/Icon';
+import { BrandingEditor, ClubWelcome, isHex, darken } from '../components/ClubBranding';
 
 /* Les 8 entrées de la barre latérale. Chacune ouvre une section réellement
    adossée à une table : rien ne mène à un écran vide sans explication. */
@@ -148,6 +149,7 @@ export default function Club() {
   const [ready, setReady] = useState(false);
   const [section, setSection] = useState('teams');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [welcomeSkipped, setWelcomeSkipped] = useState(false);
   const [club, setClub] = useState(null);
   const [sports, setSports] = useState([]);
   const [teams, setTeams] = useState([]);
@@ -369,7 +371,7 @@ export default function Club() {
       const { data } = await supabase.auth.getSession();
       if (!data.session) { router.replace('/login'); return; }
       const { data: mem } = await supabase.from('memberships')
-        .select('club_id, clubs(id, name, join_code, created_at, trial_ends_at, logo_url, accent_color, plan_key, status)')
+        .select('club_id, clubs(id, name, join_code, created_at, trial_ends_at, logo_url, accent_color, secondary_color, plan_key, status)')
         .eq('role', 'admin');
       /* Club courant choisi dans le sélecteur d'espace, sinon le premier. */
       const cur = (mem || []).find((m) => m.club_id === getStored(KEY_CLUB)) || (mem && mem[0]);
@@ -393,6 +395,16 @@ export default function Club() {
       } catch (e) { console.error('club init', e); } finally { setReady(true); }
     })();
   }, [router, loadTeams, loadPendings]);
+
+  /* La couleur principale du club devient l'accent de toute l'UI du club. */
+  const accent = club && isHex(club.accent_color) ? club.accent_color : null;
+  useEffect(() => {
+    if (!accent) return undefined;
+    const root = document.documentElement.style;
+    root.setProperty('--brand', accent);
+    root.setProperty('--brand-dark', darken(accent));
+    return () => { root.removeProperty('--brand'); root.removeProperty('--brand-dark'); };
+  }, [accent]);
 
   /* Menu mobile : Échap et passage en desktop le referment ; le scroll de la page
      n'est verrouillé que le temps où le tiroir est ouvert, et toujours rétabli. */
@@ -600,6 +612,13 @@ export default function Club() {
 
   if (!ready) {
     return <div className="wrap"><p style={{ color: 'var(--muted)' }}>{t('common.loading')}</p></div>;
+  }
+
+  if (club && teams.length === 0 && !welcomeSkipped) {
+    return (
+      <ClubWelcome club={club} sports={sports} onSkip={() => setWelcomeSkipped(true)}
+        onDone={async (b) => { setClub((c) => ({ ...c, ...b })); await loadTeams(club.id); }} />
+    );
   }
 
   if (!club) {
@@ -1286,30 +1305,10 @@ export default function Club() {
   }
 
   function BrandingSection() {
-    const hasAny = Boolean(club.logo_url || club.accent_color);
     return (
       <>
         {sectionHead('adm.nav.branding')}
-        <div className="card">
-          {!hasAny && <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 14 }}>{t('adm.brandingNone')}</div>}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-            <span className="q" style={{ width: 62, height: 62, borderRadius: 20, display: 'inline-flex',
-              alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 21, color: '#fff',
-              background: club.accent_color || 'var(--brand)',
-              backgroundImage: club.logo_url ? `url(${club.logo_url})` : 'none',
-              backgroundSize: 'cover', backgroundPosition: 'center' }}>
-              {club.logo_url ? '' : initials(club.name)}
-            </span>
-            <div>
-              <div className="label">{t('adm.brandingColor')}</div>
-              <div style={{ fontSize: 14, fontWeight: 700, marginTop: 3 }}>{club.accent_color || '—'}</div>
-            </div>
-            <div>
-              <div className="label">{t('adm.brandingLogo')}</div>
-              <div style={{ fontSize: 14, fontWeight: 700, marginTop: 3 }}>{club.logo_url ? t('adm.brandingSet') : '—'}</div>
-            </div>
-          </div>
-        </div>
+        <BrandingEditor club={club} onSaved={(b) => setClub((c) => ({ ...c, ...b }))} />
       </>
     );
   }
