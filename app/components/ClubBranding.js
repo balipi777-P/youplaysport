@@ -155,7 +155,7 @@ export function LogoPicker({ file, onFile, currentLogo }) {
 }
 
 /** Section « Branding » de la console : couleurs + logo modifiables. */
-export function BrandingEditor({ club, onSaved }) {
+export function BrandingEditor({ club, onSaved, colorsOnly = false, bare = false }) {
   const { t } = useT();
   const [accent, setAccent] = useState(isHex(club.accent_color) ? club.accent_color : DEFAULT_ACCENT);
   const [secondary, setSecondary] = useState(isHex(club.secondary_color) ? club.secondary_color : DEFAULT_SECONDARY);
@@ -177,11 +177,15 @@ export function BrandingEditor({ club, onSaved }) {
   }
 
   return (
-    <div className="card">
+    <div className={bare ? undefined : 'card'}>
       <ColorPick label={t('brand.primary')} value={accent} onChange={setAccent} />
       <ColorPick label={t('brand.secondary')} value={secondary} onChange={setSecondary} />
-      <div className="label" style={{ marginBottom: 8 }}>{t('adm.brandingLogo')}</div>
-      <div style={{ marginBottom: 16 }}><LogoPicker file={file} onFile={setFile} currentLogo={club.logo_url} /></div>
+      {!colorsOnly && (
+        <>
+          <div className="label" style={{ marginBottom: 8 }}>{t('adm.brandingLogo')}</div>
+          <div style={{ marginBottom: 16 }}><LogoPicker file={file} onFile={setFile} currentLogo={club.logo_url} /></div>
+        </>
+      )}
       <BrandPreview name={club.name} accent={accent} secondary={secondary}
         logoUrl={fileUrl || club.logo_url} />
       <button type="button" className="btn" style={{ marginTop: 14 }} disabled={busy} onClick={save}>

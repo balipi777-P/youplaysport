@@ -86,6 +86,22 @@ const CSV_COLUMNS = [
   { col: 'groupe', field: 'adm.lic.colGroup', sample: 'U11 Football' },
 ];
 
+/** Génère et télécharge le CSV d'exemple (UTF-8 avec BOM pour Excel), côté client. */
+function downloadCsvTemplate() {
+  const head = CSV_COLUMNS.map((c) => c.col).join(',');
+  const rows = [
+    CSV_COLUMNS.map((c) => c.sample).join(','),
+    'Martin,Léa,02/09/2015,s.martin@email.fr,U11 Football',
+    'Bernard,Hugo,21/06/2012,c.bernard@email.fr,U14 Basket',
+  ];
+  const blob = new Blob(['\ufeff' + [head, ...rows].join('\n') + '\n'], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'modele-import-licencies.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 /**
  * Nombre de lignes de données d'un CSV : on retire l'en-tête et les lignes
  * vides. Purement local — le fichier n'est jamais envoyé, l'import n'est pas
@@ -803,7 +819,7 @@ export default function Club() {
               opacity: off ? 0.5 : 1, cursor: off ? 'not-allowed' : 'pointer' }}>
             {t('adm.lic.importN', { n: rows })}
           </button>
-          <button type="button" className="btn ghost" onClick={() => setCsvNote(true)}
+          <button type="button" className="btn ghost" onClick={downloadCsvTemplate}
             style={{ width: 'auto', padding: '12px 18px', fontSize: 14 }}>
             {t('adm.lic.template')}
           </button>
@@ -922,7 +938,8 @@ export default function Club() {
             ))}
           </span>
         </div>
-        <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6 }}>{t('adm.lic.brandingNote')}</div>
+        <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 14 }}>{t('adm.lic.brandingNote')}</div>
+        <BrandingEditor club={club} colorsOnly bare onSaved={(b) => setClub((c) => ({ ...c, ...b }))} />
       </>
     ));
   };
