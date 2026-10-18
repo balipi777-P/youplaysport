@@ -31,6 +31,7 @@ export default function Home() {
   const [attendanceAt, setAttendanceAt] = useState(null);
   const [streak, setStreak] = useState(0);
   const [skills, setSkills] = useState([]);
+  const [spacesData, setSpacesData] = useState(null);
   const [space, setSpace] = useState(''); // espace courant ('' = inconnu : ancien comportement)
   const [err, setErr] = useState('');
   /* Vue athlète : fiches dont l'utilisateur est lui-même le licencié, et les données
@@ -236,6 +237,7 @@ export default function Home() {
     }
     /* Espace courant (my_spaces). Sans lui, on retombe sur l'ancien comportement. */
     const sd = await fetchMySpaces();
+    setSpacesData(sd);
     const sp = sd ? validStoredSpace(sd) : '';
     setSpace(sp);
     const ownIds = (own || []).map((r) => r.id);
@@ -360,6 +362,14 @@ export default function Home() {
   const openSession = (teamId, hash = '') =>
     router.push(`/seance${teamId ? `?team=${teamId}` : ''}${hash}`);
 
+  const welcomeClubs = (() => {
+    const pc = (spacesData?.parent_clubs || []).filter((c) => c && c.name);
+    if (pc.length) return pc;
+    const seen = new Set();
+    return (spacesData?.children || []).filter((c) => c?.club_name && !seen.has(c.club_name) && seen.add(c.club_name))
+      .map((c) => ({ id: c.club_id, name: c.club_name, logo_url: c.logo_url }));
+  })();
+
   return (
     <div className="wrap" style={{ paddingBottom: BOTTOM_NAV_HEIGHT + 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
@@ -459,6 +469,12 @@ export default function Home() {
       {/* ---- Vue Parent/Athlète rattaché à un club mais sans enfant/fiche encore ---- */}
       {!player && !staff && (
         <div className="card">
+          {welcomeClubs.map((c, i) => (
+            <div key={c.id || i} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <ClubAvatar name={c.name} logoUrl={c.logo_url} size={40} />
+              <span className="q" style={{ fontWeight: 800, fontSize: 15, minWidth: 0 }}>{c.name}</span>
+            </div>
+          ))}
           <h1 className="q" style={{ fontSize: 20, margin: '0 0 6px' }}>{t('home.welcome')}</h1>
           <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 0 }}>
             {t('home.welcomeHint')}
