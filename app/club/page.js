@@ -643,7 +643,10 @@ export default function Club() {
   if (club && teams.length === 0 && !welcomeSkipped) {
     return (
       <ClubWelcome club={club} sports={sports} onSkip={() => setWelcomeSkipped(true)}
-        onDone={async (b) => { setClub((c) => ({ ...c, ...b })); await loadTeams(club.id); }} />
+        onDone={async (b, info) => {
+          setClub((c) => ({ ...c, ...b })); await loadTeams(club.id);
+          if (info?.logoFailed) flash(t('brand.logoLater'));
+        }} />
     );
   }
 

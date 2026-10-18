@@ -39,11 +39,13 @@ export function initialsOf(name) {
 const LOGO_BUCKET = 'club-logos';
 const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
-/** Envoie le fichier dans le bucket public et renvoie son URL publique. */
+/** Envoie le fichier dans le bucket public et renvoie son URL publique.
+    Le chemin est horodaté donc unique : pas d'upsert, qui exigerait une policy SELECT
+    sur storage.objects (absente) et ferait échouer l'envoi. */
 async function uploadLogo(clubId, file) {
   const ext = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[file.type] || 'png';
   const path = `${clubId}/logo-${Date.now()}.${ext}`;
-  const up = await supabase.storage.from(LOGO_BUCKET).upload(path, file, { upsert: true, contentType: file.type });
+  const up = await supabase.storage.from(LOGO_BUCKET).upload(path, file, { upsert: false, contentType: file.type, cacheControl: '3600' });
   if (up.error) throw up.error;
   return supabase.storage.from(LOGO_BUCKET).getPublicUrl(path).data.publicUrl;
 }
@@ -300,7 +302,7 @@ export function ClubWelcome({ club, sports, onDone, onSkip }) {
         .map((s) => ({ club_id: club.id, sport_id: s.id, name: (isMartialSport(s) && discipline.trim()) || sportName(s) }));
       const { error } = await supabase.from('teams').insert(rows);
       if (error) throw error;
-      await onDone({ accent_color: accent, secondary_color: secondary, logo_url: r.logo_url });
+      await onDone({ accent_color: accent, secondary_color: secondary, logo_url: r.logo_url }, { logoFailed: r.logoFailed });
     } catch (e) { setErr(brandingError(e, t)); setBusy(false); }
   }
 
