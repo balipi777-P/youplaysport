@@ -125,6 +125,22 @@ function daysUntil(iso) {
   return Math.max(0, Math.ceil(ms / 86400000));
 }
 
+/** Borne une requête : au-delà de `ms`, elle échoue au lieu de laisser l'écran en attente. */
+function withTimeout(promise, ms = 12000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+  ]);
+}
+
+/** Jamais de message SQL / technique à l'écran : seuls les messages maison passent. */
+function friendlyError(e, fallback) {
+  const m = `${(e && e.message) || ''}`;
+  const technical = !m || (e && e.code) || e?.details || e?.hint
+    || /permission denied|function |relation |violates|syntax|jwt|row-level|schema|column|fetch|timeout|network|\b5\d\d\b|pgrst/i.test(m);
+  return technical ? fallback : m;
+}
+
 export default function Club() {
   const router = useRouter();
   const { t, lang } = useT();
@@ -183,12 +199,17 @@ export default function Club() {
 
   /** Licenciés = count sur players ; coachs = distinct coach_user_id. */
   const loadStats = useCallback(async (clubId, teamRows) => {
-    const { count } = await supabase.from('players').select('id', { count: 'exact', head: true }).eq('club_id', clubId);
-    setMemberCount(count || 0);
+    try {
+      const { data: rows, count } = await withTimeout(
+        supabase.from('players').select('id', { count: 'planned' }).eq('club_id', clubId));
+      setMemberCount(count ?? (rows || []).length);
+    } catch (e) { console.error('loadStats players', e); setMemberCount(0); }
     const ids = (teamRows || []).map((tm) => tm.id);
     if (ids.length === 0) { setCoachCount(0); return; }
-    const { data } = await supabase.from('coach_teams').select('coach_user_id').in('team_id', ids);
-    setCoachCount(new Set((data || []).map((r) => r.coach_user_id)).size);
+    try {
+      const { data } = await withTimeout(supabase.from('coach_teams').select('coach_user_id').in('team_id', ids));
+      setCoachCount(new Set((data || []).map((r) => r.coach_user_id)).size);
+    } catch (e) { console.error('loadStats coaches', e); setCoachCount(0); }
   }, []);
 
   /**
@@ -238,7 +259,7 @@ export default function Club() {
    * Rien n'est traduit ici : la langue se joue au rendu, sinon un changement de
    * langue relancerait toutes ces requêtes.
    */
-  const buildAthletes = useCallback(async (teamIds) => {
+  const buildAthletesRaw = useCallback(async (teamIds) => {
     if (!teamIds.length) return [];
     const { data: pls } = await supabase.from('players')
       .select('id, first_name, last_name, team_id, user_id').in('team_id', teamIds).order('first_name');
@@ -295,6 +316,12 @@ export default function Club() {
     });
   }, []);
 
+  /** Jamais bloquant : en cas d'erreur ou de lenteur, on rend une liste vide. */
+  const buildAthletes = useCallback(async (teamIds) => {
+    try { return await withTimeout(buildAthletesRaw(teamIds), 15000); }
+    catch (e) { console.error('buildAthletes', e); return []; }
+  }, [buildAthletesRaw]);
+
   const loadTeamDetail = useCallback(async (tid) => {
     setDetails((d) => ({ ...d, [tid]: { ...(d[tid] || {}), loading: true } }));
     const athletes = await buildAthletes([tid]);
@@ -337,6 +364,7 @@ export default function Club() {
 
   useEffect(() => {
     (async () => {
+      try {
       const { data } = await supabase.auth.getSession();
       if (!data.session) { router.replace('/login'); return; }
       const { data: mem } = await supabase.from('memberships')
@@ -361,7 +389,7 @@ export default function Club() {
         setDocuments(doc.data || []);
         setTickets(tk.data || []);
       }
-      setReady(true);
+      } catch (e) { console.error('club init', e); } finally { setReady(true); }
     })();
   }, [router, loadTeams, loadPendings]);
 
@@ -386,7 +414,8 @@ export default function Club() {
 
   /* La section Athlètes agrège tous les groupes, chargée à sa première ouverture. */
   useEffect(() => {
-    if (section !== 'athletes' || everyone !== null || teams.length === 0) return;
+    if (section !== 'athletes' || everyone !== null) return;
+    if (teams.length === 0) { setEveryone([]); return; }
     (async () => setEveryone(await buildAthletes(teams.map((tm) => tm.id))))();
   }, [section, everyone, teams, buildAthletes]);
 
@@ -418,18 +447,7 @@ export default function Club() {
       if (error) throw error;
       setTeamName(''); flash(t('club.teamCreated'));
       await loadTeams(club.id, data.id);
-    } catch (e) { setErr(e.message); } finally { setBusy(false); }
-  }
-
-  async function seedDemo() {
-    setErr(''); setBusy(true);
-    try {
-      const { data, error } = await supabase.rpc('seed_club_demo');
-      if (error) throw error;
-      if (data?.status === 'already_seeded') flash(t('club.demoAlready'));
-      else flash(t('club.demoCreated'));
-      await loadTeams(club.id);
-    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+    } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
   }
 
   async function addPlayer() {
@@ -445,7 +463,7 @@ export default function Club() {
       await loadHeads(teams);
       setEveryone(null);
       if (details[teamId]) await loadTeamDetail(teamId);
-    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+    } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
   }
 
   async function linkCoach(tid, email, clear) {
@@ -458,7 +476,7 @@ export default function Club() {
       clear(); flash(t('club.coachLinked'));
       await loadStats(club.id, teams);
       await loadHeads(teams);
-    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+    } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
   }
 
   async function linkParent(playerId, tid) {
@@ -471,7 +489,7 @@ export default function Club() {
       setParentEmail((m) => ({ ...m, [playerId]: '' })); flash(t('club.parentLinked'));
       setEveryone(null);
       if (details[tid]) await loadTeamDetail(tid);
-    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+    } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
   }
 
   /**
@@ -547,10 +565,11 @@ export default function Club() {
 
   /* Essai : la durée n'est pas une constante, c'est l'écart réellement enregistré
      entre la création du club et la fin de son essai. */
-  const trialLeft = club.trial_ends_at ? daysUntil(club.trial_ends_at) : null;
   const trialTotal = club.trial_ends_at && club.created_at
     ? Math.max(1, Math.round((new Date(club.trial_ends_at) - new Date(club.created_at)) / 86400000))
     : null;
+  const trialLeftRaw = club.trial_ends_at ? daysUntil(club.trial_ends_at) : null;
+  const trialLeft = trialLeftRaw !== null && trialTotal ? Math.min(trialLeftRaw, trialTotal) : trialLeftRaw;
   const trialPct = trialLeft !== null && trialTotal
     ? Math.max(0, Math.min(100, Math.round((trialLeft / trialTotal) * 100))) : 0;
 
@@ -1000,8 +1019,8 @@ export default function Club() {
         <div className="card" style={{ background: 'var(--peach)', border: 'none' }}>
           <div className="q" style={{ fontWeight: 700, fontSize: 14, color: '#5F2A1C', marginBottom: 4 }}>{t('club.demoTitle')}</div>
           <div style={{ fontSize: 12.5, color: '#7A4030', marginBottom: 10, lineHeight: 1.55 }}>{t('club.demoDesc')}</div>
-          <button className="btn ghost" style={{ width: 'auto', padding: '11px 16px' }} disabled={busy} onClick={seedDemo}>
-            {busy ? '…' : t('club.demoBtn')}
+          <button className="btn ghost" style={{ width: 'auto', padding: '11px 16px' }} disabled>
+            {t('club.demoSoon')}
           </button>
         </div>
       </>
