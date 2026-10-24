@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useT, LangToggle } from '../../lib/i18n';
 
@@ -21,6 +21,8 @@ const CHIPS = ['trial', 'nocard', 'fixed', 'eu'];
 export default function Bienvenue() {
   const router = useRouter();
   const { t } = useT();
+  const [deleted, setDeleted] = useState(false);
+  useEffect(() => { setDeleted(new URLSearchParams(window.location.search).get('deleted') === '1'); }, []);
 
   useEffect(() => { document.title = `${t('land.tab')} · YouPlaySport`; }, [t]);
 
@@ -32,6 +34,8 @@ export default function Bienvenue() {
         @media (min-width: 860px) { .pub-hero { grid-template-columns: 1.1fr 1fr; gap: 40px; } }
         .pub-roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(225px, 1fr)); gap: 14px; }
       `}</style>
+
+      {deleted && <div className="pill" role="status" style={{ marginBottom: 18 }}>{t('land.deleted')}</div>}
 
       {/* En-tête public : marque, langue, accès au compte. */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 30 }}>

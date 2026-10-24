@@ -103,7 +103,7 @@ export default function Confidentialite() {
           <p>Pour toute question relative à vos données : contact@youplaysport.app.</p>
 
           <p style={{ marginBottom: 0 }}>
-            <a href="#" onClick={(e) => { e.preventDefault(); router.push('/suppression-compte'); }}>Supprimer mon compte →</a>
+            <a href="#" onClick={(e) => { e.preventDefault(); router.push('/mes-donnees'); }}>Supprimer mon compte →</a>
           </p>
         </div>
       </div>

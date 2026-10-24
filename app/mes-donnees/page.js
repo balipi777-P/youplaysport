@@ -54,7 +54,7 @@ export default function MesDonnees() {
       if (error) throw error;
       try { await supabase.auth.signOut(); } catch { /* le compte n'existe plus : la session locale suffit à tomber */ }
       clearSpaceStorage();
-      try { window.localStorage.removeItem('yps_name_pending'); } catch { /* sans stockage, rien à vider */ }
+      try { window.localStorage.removeItem('yps_pending_name'); } catch { /* sans stockage, rien à vider */ }
       router.replace('/bienvenue?deleted=1');
     } catch (e) {
       const m = `${(e && e.message) || ''}`;
