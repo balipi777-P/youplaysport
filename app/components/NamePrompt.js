@@ -8,7 +8,7 @@ import { fetchMyName, saveMyName, takePendingName, NAME_EVENT } from '../../lib/
 
 /* Pages sans compte connecté (ou qui aiguillent elles-mêmes). */
 const HIDDEN = ['/login', '/bienvenue', '/mot-de-passe-oublie', '/reinitialiser', '/onboarding',
-  '/cgu', '/confidentialite', '/choisir-espace', '/suppression-compte'];
+  '/cgu', '/confidentialite', '/mentions-legales', '/choisir-espace', '/suppression-compte'];
 
 /**
  * Encart « Comment t'appelles-tu ? », affiché une fois quand le compte n'a pas de

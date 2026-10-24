@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useT, LangToggle } from '../../lib/i18n';
+import PilotBanner from '../components/PilotBanner';
 
 /**
  * Chiffres annoncés dans le héros. Ils doivent rester vérifiables :
@@ -35,6 +36,7 @@ export default function Bienvenue() {
         .pub-roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(225px, 1fr)); gap: 14px; }
       `}</style>
 
+      <PilotBanner />
       {deleted && <div className="pill" role="status" style={{ marginBottom: 18 }}>{t('land.deleted')}</div>}
 
       {/* En-tête public : marque, langue, accès au compte. */}
@@ -127,6 +129,7 @@ export default function Bienvenue() {
         <a href="#" onClick={(e) => { e.preventDefault(); router.push('/forfaits'); }}>{t('land.footer.plans')}</a>
         <a href="#" onClick={(e) => { e.preventDefault(); router.push('/confidentialite'); }}>{t('land.footer.privacy')}</a>
         <a href="#" onClick={(e) => { e.preventDefault(); router.push('/cgu'); }}>{t('land.footer.terms')}</a>
+        <a href="#" onClick={(e) => { e.preventDefault(); router.push('/mentions-legales'); }}>{t('land.footer.legal')}</a>
         <a href="#" onClick={(e) => { e.preventDefault(); router.push('/suppression-compte'); }}>{t('land.footer.delete')}</a>
       </div>
       <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 12, margin: '14px 0 0' }}>

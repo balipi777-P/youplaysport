@@ -1,5 +1,6 @@
 'use client';
 
+import PilotBanner from './components/PilotBanner';
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../lib/supabaseClient';
@@ -375,6 +376,7 @@ export default function Home() {
 
   return (
     <div className="wrap" style={{ paddingBottom: BOTTOM_NAV_HEIGHT + 24 }}>
+      <PilotBanner style={{ marginTop: 4 }} />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
         {headClub ? (
           /* Le club en évidence ; YouPlaySport reste en filigrane. */

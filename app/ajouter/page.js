@@ -370,10 +370,10 @@ export default function AjouterEnfant() {
         <input type="checkbox" checked={consent} onChange={() => setConsent((v) => !v)}
           style={{ width: 17, height: 17, accentColor: 'var(--brand)', flex: '0 0 17px', marginTop: 2 }} />
         <span style={{ fontSize: 12.5, lineHeight: 1.6 }}>
-          {clubName && childName ? t('add.consent.full', { club: clubName, child: childName })
-            : clubName ? t('add.consent.club', { club: clubName })
-              : childName ? t('add.consent.child', { child: childName })
-                : t('add.consent.plain')}
+          {t('add.consent.legal', { club: clubName || t('add.consent.theClub') })}{' '}
+          <a href="/confidentialite" target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
+            {t('add.consent.policy')}
+          </a>
         </span>
       </label>
 

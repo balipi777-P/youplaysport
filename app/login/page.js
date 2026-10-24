@@ -1,5 +1,6 @@
 'use client';
 
+import PilotBanner from '../components/PilotBanner';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
@@ -152,6 +153,7 @@ export default function LoginPage() {
           </>
         )}
 
+        <PilotBanner />
         <div className="card" style={{ padding: 20 }}>
           {mode === 'signup' && (
             <div className="label" style={{ marginBottom: 12 }}>{t('signup.account')}</div>
@@ -198,6 +200,11 @@ export default function LoginPage() {
           )}
         </div>
       </form>
+      <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap', fontSize: 12.5, marginTop: 4 }}>
+        <a href="/cgu" onClick={(e) => { e.preventDefault(); router.push('/cgu'); }}>{t('pilot.terms')}</a>
+        <a href="/confidentialite" onClick={(e) => { e.preventDefault(); router.push('/confidentialite'); }}>{t('pilot.privacy')}</a>
+        <a href="/mentions-legales" onClick={(e) => { e.preventDefault(); router.push('/mentions-legales'); }}>{t('land.footer.legal')}</a>
+      </div>
 
       <p style={{ textAlign: 'center', fontSize: 14 }}>
         {mode === 'login' ? (

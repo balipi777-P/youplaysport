@@ -13,7 +13,7 @@ import {
 
 /* Pages sans compte connecté (ou qui aiguillent elles-mêmes). */
 const HIDDEN = ['/login', '/bienvenue', '/mot-de-passe-oublie', '/reinitialiser', '/onboarding',
-  '/cgu', '/confidentialite', '/choisir-espace'];
+  '/cgu', '/confidentialite', '/mentions-legales', '/choisir-espace'];
 
 const CTX_LABEL = { parent: 'space.child', coach: 'space.team', admin: 'space.club' };
 
