@@ -1,5 +1,6 @@
 'use client';
 
+import AppVersion from '../components/AppVersion';
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
@@ -170,6 +171,7 @@ export default function Profil() {
           style={{ fontWeight: 700, fontSize: 14 }}>{t('mydata.link')} →</a>
       </div>
 
+      <AppVersion />
       <BottomNav role="parent" />
     </div>
   );
@@ -423,6 +425,7 @@ export default function Profil() {
         ))}
       </div>
 
+      <AppVersion />
       <BottomNav role="parent" />
     </div>
   );

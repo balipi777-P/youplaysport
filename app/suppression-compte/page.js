@@ -19,9 +19,13 @@ export default function SuppressionCompte() {
         <p>Votre compte (e-mail, mot de passe, préférences) et les données personnelles rattachées. Pour un dirigeant, la suppression du club entraîne celle de ses équipes, licenciés, séances et convocations.</p>
 
         <h3 className="q">Délai</h3>
-        <p>La suppression est effective sous 30 jours après confirmation, sauf obligation légale de conservation.</p>
+        <p>Depuis l’application, la suppression est immédiate. Par e-mail, elle est effective sous 30 jours, sauf obligation légale de conservation.</p>
 
-        <h3 className="q">Comment faire la demande</h3>
+        <h3 className="q">Supprimer immédiatement</h3>
+        <p>Connecté, vous pouvez supprimer votre compte vous-même, tout de suite, depuis « Mes données personnelles ».</p>
+        <button type="button" className="btn" onClick={() => router.push('/mes-donnees')}>Supprimer mon compte maintenant</button>
+
+        <h3 className="q">Ou par e-mail</h3>
         <p>Envoyez un e-mail depuis l’adresse de votre compte, en précisant qu’il s’agit d’une demande de suppression :</p>
         <a className="btn" style={{ textDecoration: 'none', textAlign: 'center' }}
           href={`mailto:contact@youplaysport.app?subject=${subject}&body=${body}`}>
