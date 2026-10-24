@@ -16,8 +16,7 @@ export default function MesDonnees() {
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
   const [confirming, setConfirming] = useState(false);
-  const [agree, setAgree] = useState(false);
-  const [bye, setBye] = useState(false);
+  const [word, setWord] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -35,7 +34,7 @@ export default function MesDonnees() {
       const blob = new Blob([JSON.stringify(data ?? {}, null, 2)], { type: 'application/json;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = 'mes-donnees-youplaysport.json';
+      a.href = url; a.download = `youplaysport-export-${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       setMsg(t('mydata.exported'));
@@ -45,30 +44,27 @@ export default function MesDonnees() {
     } finally { setBusy(''); }
   }
 
+  const typed = word.trim().toUpperCase() === t('mydata.typeWord');
+
   async function deleteAccount() {
-    if (!agree) return;
+    if (!typed) return;
     setBusy('delete'); setErr('');
     try {
       const { error } = await supabase.schema('yps').rpc('delete_my_account');
       if (error) throw error;
       try { await supabase.auth.signOut(); } catch { /* le compte n'existe plus : la session locale suffit à tomber */ }
       clearSpaceStorage();
-      setBye(true);
+      try { window.localStorage.removeItem('yps_name_pending'); } catch { /* sans stockage, rien à vider */ }
+      router.replace('/bienvenue?deleted=1');
     } catch (e) {
-      console.error('delete_my_account', e);
-      setErr(`${(e && e.message) || ''}`.includes('not_authorized') ? t('mydata.errAuth') : t('mydata.errDelete'));
+      const m = `${(e && e.message) || ''}`;
+      console.error('delete_my_account', m.split(':')[0]);
+      if (m.includes('sole_admin_of_club')) {
+        setErr(t('mydata.errSoleAdmin', { clubs: m.split('sole_admin_of_club:')[1]?.trim() || '' }));
+      } else if (m.includes('platform_admin_cannot_self_delete')) setErr(t('mydata.errPlatform'));
+      else if (m.includes('not authenticated') || m.includes('not_authorized')) setErr(t('mydata.errNotAuth'));
+      else setErr(t('mydata.errDelete'));
     } finally { setBusy(''); }
-  }
-
-  if (bye) {
-    return (
-      <div className="wrap" style={{ textAlign: 'center', paddingTop: 72 }}>
-        <div style={{ fontSize: 44, marginBottom: 14 }}>👋</div>
-        <h1 className="q" style={{ fontSize: 24, margin: '0 0 10px' }}>{t('mydata.byeTitle')}</h1>
-        <p style={{ fontSize: 14, color: 'var(--muted)', lineHeight: 1.6, margin: '0 0 22px' }}>{t('mydata.byeBody')}</p>
-        <button type="button" className="btn" onClick={() => router.replace('/bienvenue')}>{t('mydata.byeCta')}</button>
-      </div>
-    );
   }
 
   if (!ready) return <div className="wrap"><p style={{ color: 'var(--muted)' }}>{t('common.loading')}</p></div>;
@@ -100,17 +96,16 @@ export default function MesDonnees() {
         ) : (
           <div role="alertdialog" aria-label={t('mydata.confirmT')}>
             <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10 }}>{t('mydata.confirmT')}</div>
-            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13.5, lineHeight: 1.5,
-              marginBottom: 14, cursor: 'pointer' }}>
-              <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)}
-                style={{ width: 20, height: 20, flex: '0 0 20px', marginTop: 1 }} />
-              <span>{t('mydata.agree')}</span>
+            <label style={{ display: 'block', fontSize: 13.5, lineHeight: 1.5, marginBottom: 14 }}>
+              <span style={{ display: 'block', marginBottom: 6 }}>{t('mydata.typeLabel')}</span>
+              <input value={word} onChange={(e) => setWord(e.target.value)} autoCapitalize="characters"
+                autoComplete="off" autoCorrect="off" spellCheck={false} aria-label={t('mydata.typeLabel')} />
             </label>
             <div style={{ display: 'flex', gap: 10 }}>
               <button type="button" className="btn ghost" style={{ flex: 1 }} disabled={busy !== ''}
-                onClick={() => { setConfirming(false); setAgree(false); setErr(''); }}>{t('common.cancel')}</button>
-              <button type="button" className="btn" disabled={!agree || busy !== ''} onClick={deleteAccount}
-                style={{ flex: 1, background: DANGER, opacity: agree ? 1 : 0.5 }}>
+                onClick={() => { setConfirming(false); setWord(''); setErr(''); }}>{t('common.cancel')}</button>
+              <button type="button" className="btn" disabled={!typed || busy !== ''} onClick={deleteAccount}
+                style={{ flex: 1, background: DANGER, opacity: typed ? 1 : 0.5 }}>
                 {busy === 'delete' ? '…' : t('mydata.deleteFinal')}
               </button>
             </div>
