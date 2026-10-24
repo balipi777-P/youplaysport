@@ -849,6 +849,23 @@ export default function Club() {
     flash(t(approve ? 'adm.lic.linkValidated' : 'adm.lic.linkRejected'));
   }
 
+  const [tkBusy, setTkBusy] = useState(false);
+  /** Crée un ticket pour ce club (RLS : réservé à ses dirigeants) puis recharge la liste. */
+  async function sendTicket() {
+    const subject = tkSubject.trim();
+    if (!subject || !tkBody.trim() || tkBusy || !club?.id) { if (!subject || !tkBody.trim()) setErr(t('adm.sup.errEmpty')); return; }
+    setTkBusy(true); setErr('');
+    const { error } = await supabase.schema('yps').from('support_tickets').insert({
+      club_id: club.id, subject, body: tkBody.trim(), priority: tkPriority,
+    });
+    if (error) { console.error('support_tickets insert', error.code); setTkBusy(false); setErr(t('adm.sup.errSend')); return; }
+    const { data } = await supabase.from('support_tickets').select('id, subject, status, priority, created_at')
+      .eq('club_id', club.id).order('created_at', { ascending: false });
+    setTickets(data || []);
+    setTkSubject(''); setTkBody(''); setTkPriority('normal'); setTkBusy(false);
+    flash(t('adm.sup.sent'));
+  }
+
   const pendingCard = () => panel(t('adm.lic.pending'), (
     <>
       <PendingLinksList pendings={pendings} busy={linkBusy} onDecide={decideLink} />
@@ -1320,7 +1337,7 @@ export default function Club() {
             </div>
 
             <button type="button" className="btn" style={{ marginTop: 14 }}
-              onClick={() => flash(t('adm.sup.sendSoon'))}>
+              disabled={tkBusy} onClick={sendTicket}>
               {t('adm.sup.send')}
             </button>
           </div>
