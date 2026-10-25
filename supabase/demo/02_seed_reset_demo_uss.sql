@@ -1,5 +1,5 @@
 -- 02 — Seed + reset du club DEMO-USS « Union Sportive de Savanville ».
--- demo_uss_reset() supprime UNIQUEMENT les lignes rattachées au club dont join_code = 'DEMO-USS', puis recrée tout.
+-- demo_uss_reset() supprime UNIQUEMENT les lignes du club join_code = 'DEMO-USS' ET is_demo = true (filtre is_demo sur chaque delete), puis recrée tout.
 -- Prérequis : 01_schema_demo.sql appliqué ET les 4 comptes créés via l'inscription normale
 -- (mots de passe forts, jamais écrits ici) : balipi777+demo-admin / -coach / -parent / -ville @gmail.com.
 -- Aucun e-mail n'est envoyé : seuls les alias de Pierre sont utilisés.
@@ -29,21 +29,21 @@ begin
   -- ===== RESET (strictement limité au club DEMO-USS, club_id ET is_demo = true) =====
   select id into v_club from yps.clubs where join_code = 'DEMO-USS' and is_demo = true;
   if v_club is not null then
-    delete from yps.event_convocations where event_id in (select e.id from yps.events e join yps.teams t on t.id=e.team_id where t.club_id=v_club);
-    delete from yps.events where team_id in (select id from yps.teams where club_id=v_club);
-    delete from yps.messages where session_id in (select s.id from yps.sessions s join yps.teams t on t.id=s.team_id where t.club_id=v_club)
-                                or team_id in (select id from yps.teams where club_id=v_club);
-    delete from yps.session_axes where session_id in (select s.id from yps.sessions s join yps.teams t on t.id=s.team_id where t.club_id=v_club);
-    delete from yps.session_challenge where session_id in (select s.id from yps.sessions s join yps.teams t on t.id=s.team_id where t.club_id=v_club);
-    delete from yps.attendance where session_id in (select s.id from yps.sessions s join yps.teams t on t.id=s.team_id where t.club_id=v_club);
-    delete from yps.sessions where team_id in (select id from yps.teams where club_id=v_club);
+    delete from yps.event_convocations where event_id in (select e.id from yps.events e join yps.teams t on t.id=e.team_id where t.club_id=v_club and t.is_demo = true and e.team_id = t.id);
+    delete from yps.events where team_id in (select id from yps.teams where club_id=v_club and is_demo = true);
+    delete from yps.messages where session_id in (select s.id from yps.sessions s join yps.teams t on t.id=s.team_id where t.club_id=v_club and t.is_demo = true and s.is_demo = true)
+                                or team_id in (select id from yps.teams where club_id=v_club and is_demo = true);
+    delete from yps.session_axes where session_id in (select s.id from yps.sessions s join yps.teams t on t.id=s.team_id where t.club_id=v_club and t.is_demo = true and s.is_demo = true);
+    delete from yps.session_challenge where session_id in (select s.id from yps.sessions s join yps.teams t on t.id=s.team_id where t.club_id=v_club and t.is_demo = true and s.is_demo = true);
+    delete from yps.attendance where session_id in (select s.id from yps.sessions s join yps.teams t on t.id=s.team_id where t.club_id=v_club and t.is_demo = true and s.is_demo = true);
+    delete from yps.sessions where is_demo = true and team_id in (select id from yps.teams where club_id=v_club and is_demo = true);
     delete from yps.player_parents where player_id in (select id from yps.players where club_id=v_club and is_demo = true);
     delete from yps.coach_teams where team_id in (select id from yps.teams where club_id=v_club and is_demo = true);
     delete from yps.players where club_id=v_club and is_demo = true;
     delete from yps.teams where club_id=v_club and is_demo = true;
-    delete from yps.memberships where club_id=v_club;
-    delete from yps.support_tickets where club_id=v_club;
-    delete from yps.subscriptions where club_id=v_club;
+    delete from yps.memberships where club_id=v_club and exists (select 1 from yps.clubs c where c.id=v_club and c.is_demo = true);
+    delete from yps.support_tickets where club_id=v_club and exists (select 1 from yps.clubs c where c.id=v_club and c.is_demo = true);
+    delete from yps.subscriptions where club_id=v_club and exists (select 1 from yps.clubs c where c.id=v_club and c.is_demo = true);
     delete from yps.clubs where id=v_club and is_demo = true;
   end if;
 
