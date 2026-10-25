@@ -28,7 +28,42 @@ begin
   ) into res;
   return res;
 end $function$;
--- NB : sa_clubs() et sa_tickets() sont à filtrer de la même façon (`where not is_demo`) — à relire avec leur définition actuelle.
+
+-- sa_clubs : expose is_demo sans filtrer le club (la console plateforme voit tout, avec le marqueur).
+create or replace function yps.sa_clubs()
+ returns jsonb language plpgsql security definer set search_path to 'yps','public' as $function$
+declare res jsonb;
+begin
+  perform yps.sa_guard();
+  select coalesce(jsonb_agg(row order by row->>'created_at' desc), '[]'::jsonb) into res
+  from (
+    select jsonb_build_object(
+      'id', c.id, 'name', c.name, 'plan_key', c.plan_key,
+      'plan_name', pl.name, 'status', c.status,
+      'trial_ends_at', c.trial_ends_at, 'created_at', c.created_at,
+      'is_demo', c.is_demo,
+      'licencies', (select count(*) from yps.players p where p.club_id=c.id),
+      'teams', (select count(*) from yps.teams t where t.club_id=c.id),
+      'members', (select count(*) from yps.memberships m where m.club_id=c.id)
+    ) row
+    from yps.clubs c left join yps.plans pl on pl.key=c.plan_key
+  ) s;
+  return res;
+end $function$;
+
+-- sa_tickets : exclut les tickets des clubs de démonstration.
+create or replace function yps.sa_tickets()
+ returns jsonb language plpgsql security definer set search_path to 'yps','public' as $function$
+declare res jsonb;
+begin
+  perform yps.sa_guard();
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', t.id, 'club', c.name, 'subject', t.subject, 'priority', t.priority,
+    'status', t.status, 'body', t.body, 'created_at', t.created_at) order by t.created_at desc), '[]'::jsonb)
+  into res from yps.support_tickets t left join yps.clubs c on c.id = t.club_id
+  where coalesce(c.is_demo, false) = false;
+  return res;
+end $function$;
 
 -- Tableau de bord « ville » : uniquement des chiffres agrégés, aucune donnée nominative.
 create table if not exists yps.city_viewers (
