@@ -62,6 +62,7 @@ export default function ParentJournal({
   session, attendance, attendanceAt, sessionSkills, streak,
   nextEvent, convocation,
   onSwitchChild, onAlerts, onAdd, onCarnet, onAgenda, onExportChild,
+  onRespond, respondBusy, respondErr,
 }) {
   const [exporting, setExporting] = useState(false);
   const { t, lang } = useT();
@@ -416,19 +417,21 @@ export default function ParentJournal({
             ].filter(Boolean).join(' · ')}
           </div>
           <EventNotes text={nextEvent.notes} />
-          {/* Boutons visuels : la réponse du parent sera câblée avec le reste du
-              flux de convocation. L'état affiché dessous, lui, vient de la base. */}
+          {/* Réponse du parent : écrite en base par l'accueil, l'état affiché vient d'elle. */}
           <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
             {[['present', 'journal.present'], ['absent', 'journal.absent']].map(([answer, key]) => {
               const on = convocation?.response === answer;
               return (
                 <button key={answer} type="button" className={on ? 'btn' : 'btn ghost'}
+                  aria-pressed={on} disabled={!onRespond || respondBusy}
+                  onClick={() => onRespond && onRespond(nextEvent.id, answer)}
                   style={{ marginBottom: 0, flex: 1 }}>
                   {t(key)}
                 </button>
               );
             })}
           </div>
+          {respondErr && <div className="error" role="alert" style={{ marginTop: 10 }}>{respondErr}</div>}
           <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginTop: 10 }}>
             {convocation?.response
               ? t('journal.answered', { answer: t(convocation.response === 'present' ? 'journal.present' : 'journal.absent') })

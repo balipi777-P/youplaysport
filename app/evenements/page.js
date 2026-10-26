@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
@@ -72,7 +72,16 @@ export default function Evenements() {
     return code ? t(`rsvp.err.${code}`) : t('rsvp.err.other');
   };
 
-  const flash = (m) => { setOk(m); setErr(''); setTimeout(() => setOk(''), 3500); };
+  const okTimer = useRef(null);
+  const flash = (m) => {
+    setOk(m); setErr('');
+    clearTimeout(okTimer.current);
+    okTimer.current = setTimeout(() => setOk(''), 6000);
+  };
+  /* ?event=… : l'accueil ouvre l'écran sur un événement précis (lu une seule fois). */
+  const wantedEvent = useRef(null);
+  useEffect(() => { wantedEvent.current = new URLSearchParams(window.location.search).get('event'); }, []);
+  useEffect(() => () => clearTimeout(okTimer.current), []);
 
   useEffect(() => {
     (async () => {
@@ -117,6 +126,10 @@ export default function Evenements() {
       .select(`id, type, datetime, place, opponent, rsvp_deadline${wn ? ', notes' : ''}`)
       .eq('team_id', tid).order('datetime', { ascending: true }));
     setEvents(evs || []);
+    if (wantedEvent.current) {
+      if ((evs || []).some((e) => e.id === wantedEvent.current)) setEventId(wantedEvent.current);
+      wantedEvent.current = null;
+    }
   }, []);
 
   useEffect(() => { setEventId(''); loadTeam(teamId); }, [teamId, loadTeam]);
@@ -209,9 +222,10 @@ export default function Evenements() {
   async function send() {
     setErr(''); setBusy(true);
     try {
-      if (!teamId) throw new Error(t('evt.errTeam'));
-      if (sel.size === 0) throw new Error(t('evt.errNoPlayers'));
-      if (!date || !time) throw new Error(t('evt.errDate'));
+      const mine = (m) => Object.assign(new Error(m), { mine: true });
+      if (!teamId) throw mine(t('evt.errTeam'));
+      if (sel.size === 0) throw mine(t('evt.errNoPlayers'));
+      if (!date || !time) throw mine(t('evt.errDate'));
       /* La date-limite couvre toute la journée saisie : le parent qui répond
          le soir même n'est pas hors délai. */
       const rsvp = deadline ? new Date(`${deadline}T23:59:59`).toISOString() : null;
@@ -229,10 +243,12 @@ export default function Evenements() {
       if (error) throw error;
       await loadTeam(teamId);
       if (newId) setEventId(newId);
-      flash(t('evt.sent', { n: sel.size }));
+      flash(t(sel.size === 1 ? 'evt.sent1' : 'evt.sent', { n: sel.size }));
     } catch (e) {
-      const m = String(e?.message || '');
-      setErr(m.includes('no_players') || m.includes('player_not_in_team') ? rpcMsg(e) : (m || t('common.error')));
+      console.error('[create_event]', e);
+      /* Toujours un message français : les erreurs de la base sont traduites. */
+      setOk('');
+      setErr(e?.mine ? e.message : rpcMsg(e));
     } finally { setBusy(false); }
   }
 
@@ -263,6 +279,18 @@ export default function Evenements() {
 
   return (
     <div className="wrap" style={{ paddingBottom: BOTTOM_NAV_HEIGHT + 24 }}>
+      {/* ===== Confirmation : tout en haut, fermable, disparaît seule ===== */}
+      {ok && (
+        <div role="status" aria-live="polite" style={{ position: 'sticky', top: 8, zIndex: 20, display: 'flex',
+          alignItems: 'center', gap: 10, background: '#E7F4EA', color: '#1E6B3A', border: '1px solid #BFE0C8',
+          borderRadius: 12, padding: '10px 12px', fontSize: 14, fontWeight: 700, marginBottom: 12,
+          boxShadow: '0 2px 8px rgba(0,0,0,.08)' }}>
+          <span style={{ flex: 1 }}>✓ {ok}</span>
+          <button type="button" aria-label={t('common.close')} onClick={() => setOk('')}
+            style={{ background: 'none', border: 'none', color: 'inherit', fontSize: 18, lineHeight: 1,
+              cursor: 'pointer', padding: 4 }}>×</button>
+        </div>
+      )}
       {/* ===== En-tête ===== */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 18 }}>
         <a href="#" onClick={(e) => { e.preventDefault(); router.push('/'); }}
@@ -283,8 +311,7 @@ export default function Evenements() {
 
       {teams.length > 0 && (
         <>
-          {err && <div className="error">{err}</div>}
-          {ok && <div className="pill" style={{ marginBottom: 12 }}>{ok}</div>}
+          {err && <div className="error" role="alert">{err}</div>}
 
           {/* ===== Le groupe, et l'événement regardé ===== */}
           <div className="card">
@@ -396,8 +423,11 @@ export default function Evenements() {
             {!locked && players.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 gap: 10, margin: '8px 0 4px', flexWrap: 'wrap' }}>
-                <button type="button" className="btn ghost"
-                  style={{ width: 'auto', padding: '0 14px', marginBottom: 0 }} onClick={toggleAll}>
+                <button type="button" className="btn" aria-pressed={allOn}
+                  style={{ width: 'auto', padding: '0 14px', marginBottom: 0,
+                    background: allOn ? 'var(--brand)' : 'var(--peach)',
+                    color: allOn ? '#fff' : 'var(--brand-dark)',
+                    border: allOn ? 'none' : '1px solid var(--brand)' }} onClick={toggleAll}>
                   {allOn ? t('evt.deselectAll') : t('evt.allPlayers')}
                 </button>
                 <span aria-live="polite" style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--muted)' }}>

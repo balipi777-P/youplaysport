@@ -54,6 +54,7 @@ export default function Home() {
   /* Tableau de bord staff : équipes encadrées, dernière séance publiée, identité. */
   const [staffTeams, setStaffTeams] = useState([]);
   const [staffSession, setStaffSession] = useState(null);
+  const [staffEvents, setStaffEvents] = useState([]);
   /* Nom de l'utilisateur connecté : titre de l'espace staff et sous-titre du journal. */
   const [userName, setUserName] = useState('');
 
@@ -197,6 +198,19 @@ export default function Home() {
     }
     setStaffTeams(list);
 
+    /* Prochain événement (ou en cours : commencé depuis moins de 3 h) de chaque
+       groupe. La RLS d'events limite déjà aux équipes que le staff peut lire. */
+    if (ids.length) {
+      const { data: evs } = await supabase.from('events')
+        .select('id, team_id, type, opponent, place, datetime')
+        .in('team_id', ids)
+        .gte('datetime', new Date(Date.now() - 3 * 3600 * 1000).toISOString())
+        .order('datetime').limit(200);
+      const seen = new Set();
+      setStaffEvents((evs || []).filter((e) => !seen.has(e.team_id) && seen.add(e.team_id))
+        .map((e) => ({ ...e, teamName: list.find((tm) => tm.id === e.team_id)?.name || '' })));
+    } else setStaffEvents([]);
+
     /* Séance du jour, publiée ou non : le coach la prépare avant d'en publier
        le compte rendu. La RLS de sessions n'ouvre que sur ses équipes. */
     let se = null;
@@ -285,6 +299,27 @@ export default function Home() {
     }
     loadUpcoming(player, myPlayerIds.includes(player.id));
   }, [player, myPlayerIds, loadUpcoming]);
+
+  /* Réponse du parent depuis le journal : même RPC que l'agenda (contrôle du
+     lien parent côté base), puis rechargement de la convocation affichée. */
+  const [parentRsvpBusy, setParentRsvpBusy] = useState(false);
+  const [parentRsvpErr, setParentRsvpErr] = useState('');
+  async function respondParent(eventId, answer) {
+    if (!player || !eventId || parentRsvpBusy) return;
+    setParentRsvpBusy(true); setParentRsvpErr('');
+    try {
+      const { error } = await supabase.schema('yps').rpc('rsvp', {
+        p_event: eventId, p_player: player.id, p_response: answer,
+      });
+      if (error) throw error;
+      await loadUpcoming(player, false);
+    } catch (e) {
+      console.error('[rsvp]', e);
+      const m = String(e?.message || '');
+      const code = ['not_authorized', 'not_convoked', 'event_not_found'].find((c) => m.includes(c));
+      setParentRsvpErr(code ? t(`rsvp.err.${code}`) : t('rsvp.err.other'));
+    } finally { setParentRsvpBusy(false); }
+  }
 
   /* Réponse à une convocation. L'enum rsvp_response ne connaît que 'present' et
      'absent', et la RLS n'autorise cette mise à jour qu'au licencié lui-même. */
@@ -416,6 +451,7 @@ export default function Home() {
           userName={userName} roleLine={roleLine}
           kids={children}
           player={player}
+          onRespond={respondParent} respondBusy={parentRsvpBusy} respondErr={parentRsvpErr}
           onExportChild={async () => { try { await exportChildData(player); } catch (e) { console.error('[export_child_data]', e); alert(t('exp.childErr')); } }}
           clubCount={clubCount}
           session={session}
@@ -462,6 +498,8 @@ export default function Home() {
             todayLabel={todayLabel}
             coachName={userName} roleLine={roleLine}
             todaySession={staffSession}
+            nextEvent={coachTeams.length ? staffEvents.find((e) => coachTeams.some((tm) => tm.id === e.team_id)) || null : null}
+            onOpenEvent={(e) => router.push(`/evenements?team=${e.team_id}&event=${e.id}`)}
             teams={coachTeams}
             showClub={manyClubs}
             joinCode={staff.role === 'admin' ? staff.clubs?.join_code || null : null}

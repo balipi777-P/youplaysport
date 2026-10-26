@@ -1,6 +1,7 @@
 'use client';
 
 import { useT } from '../../lib/i18n';
+import CoachNextEvent from './CoachNextEvent';
 import { firstNameOf, initialsOfName } from '../../lib/userName';
 
 /* Onglet « Groupes » du coach — l'accueil de son espace. Composant purement
@@ -50,7 +51,7 @@ function Chip({ children }) {
 
 export default function CoachGroups({
   todayLabel, coachName, roleLine, todaySession, teams, showClub,
-  joinCode, onOpenSession, onNewSession, onNewEvent, onPresence, onSkills, onManageClub,
+  joinCode, nextEvent, onOpenEvent, onOpenSession, onNewSession, onNewEvent, onPresence, onSkills, onManageClub,
 }) {
   const { t, lang } = useT();
 
@@ -93,6 +94,8 @@ export default function CoachGroups({
 
       {/* ---- Séance du jour. Lisible avant publication : la RLS de sessions
              n'ouvre que sur l'équipe. ---- */}
+      <CoachNextEvent event={nextEvent} onOpen={onOpenEvent} />
+
       {todaySession && (
         <div className="card" style={{ background: GREEN.bg, border: `1px solid ${GREEN.line}`,
           marginTop: 18 }}>
