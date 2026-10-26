@@ -188,6 +188,7 @@ export default function Club() {
   const [tkPriority, setTkPriority] = useState('normal');
   const [tkBusy, setTkBusy] = useState(false);
   const [pendCoaches, setPendCoaches] = useState([]); // coachs du club sans équipe
+  const [folded, setFolded] = useState({});         // {'ath:'+teamId | 'co:'+teamId: true} — blocs repliés
   const [delTeam, setDelTeam] = useState(null);    // {id, step: 1|2, typed}
   const [moveCoach, setMoveCoach] = useState(null);  // {uid, from, to}
   const [movePl, setMovePl] = useState(null);        // {id, from, to}
@@ -700,9 +701,22 @@ export default function Club() {
       .cons-main { padding: 18px 16px 48px; }
       .cons-two { grid-template-columns: 1fr; }
     }
+    .tm-head { width: 100%; display: flex; align-items: center; gap: 13px; padding: 16px; border: none;
+      background: transparent; font: inherit; text-align: left; cursor: pointer; }
+    .tm-name { flex: 1; min-width: 0; }
+    .tm-sub-m, .tm-break { display: none; }
     @media (max-width: 640px) {
       .cons-row { grid-template-columns: 1fr; gap: 3px; }
-      .cons-row .cons-th { display: none; }
+      .cons-row.cons-th { display: none; }
+      /* Ligne 1 : repère + nom (jamais coupé) + bouton ; ligne 2 : pastille, texte, compteur. */
+      .tm-head { flex-wrap: wrap; row-gap: 8px; column-gap: 10px; align-items: flex-start; }
+      .tm-name { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+      .tm-tog { order: 2; margin-left: auto; }
+      .tm-break { display: block; order: 3; flex-basis: 100%; height: 0; }
+      .tm-pill, .tm-sub-m, .tm-count { order: 4; }
+      .tm-sub-m { display: inline; }
+      .tm-sub-d { display: none; }
+      .tm-count { margin-left: auto; }
     }
   `;
 
@@ -966,6 +980,23 @@ export default function Club() {
     );
   };
 
+  const chevron = (isFolded) => (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"
+      style={{ transition: 'transform .18s', transform: isFolded ? 'rotate(-90deg)' : 'none' }}>
+      <path d="M3.5 6l4.5 4.5L12.5 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+  const foldHead = (key, label, folded0) => (
+    <button type="button" aria-expanded={!folded0} aria-label={label}
+      onClick={() => setFolded((m) => ({ ...m, [key]: !m[key] }))}
+      style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+        border: 'none', background: 'transparent', padding: 0, margin: '0 0 8px', font: 'inherit',
+        cursor: 'pointer', color: 'inherit', textAlign: 'left' }}>
+      <span className="label" style={{ margin: 0 }}>{label}</span>
+      <span style={{ color: 'var(--muted)', display: 'inline-flex' }}>{chevron(folded0)}</span>
+    </button>
+  );
+
   const panel = (title, children) => (
     <div className="card" style={{ marginBottom: 0 }}>
       <div className="label" style={{ marginBottom: 8 }}>{title}</div>
@@ -1203,33 +1234,33 @@ export default function Club() {
           return (
             <div key={tm.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
               {/* En-tête cliquable : déplie / replie */}
-              <button type="button" onClick={() => toggleTeam(tm.id)} aria-expanded={isOpen}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 13, padding: 16,
-                  border: 'none', background: 'transparent', font: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+              <button type="button" className="tm-head" onClick={() => toggleTeam(tm.id)} aria-expanded={isOpen}>
                 <span className="q" style={{ flex: '0 0 auto', minWidth: 46, borderRadius: 13, padding: '9px 11px',
                   background: tn.bg, color: tn.ink, fontWeight: 800, fontSize: 13, textAlign: 'center' }}>
                   {tm.category || tm.sports?.icon || '•'}
                 </span>
-                <span style={{ flex: 1, minWidth: 0 }}>
+                <span className="tm-name">
                   <span className="q" style={{ display: 'block', fontWeight: 700, fontSize: 16 }}>{tm.name}</span>
-                  {sub && <span style={{ display: 'block', fontSize: 12.5, color: 'var(--muted)', marginTop: 2 }}>{sub}</span>}
+                  {sub && <span className="tm-sub-d" style={{ display: 'block', fontSize: 12.5, color: 'var(--muted)', marginTop: 2 }}>{sub}</span>}
                 </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 20,
+                <span aria-hidden="true" className="tm-tog" style={{ flex: '0 0 30px', width: 30, height: 30, borderRadius: 10,
+                  border: '1px solid var(--border)', display: 'inline-flex', alignItems: 'center',
+                  justifyContent: 'center', fontSize: 15, fontWeight: 700, color: 'var(--muted)', order: 5 }}>
+                  {isOpen ? '−' : '+'}
+                </span>
+                <span className="tm-break" aria-hidden="true" />
+                <span className="tm-pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 20,
                   padding: '5px 11px', background: 'var(--peach)', color: 'var(--brand-dark)',
                   fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
                   {tm.sports?.icon} {sportName(tm.sports)}
                 </span>
+                {sub && <span className="tm-sub-m" style={{ fontSize: 12.5, color: 'var(--muted)', minWidth: 0 }}>{sub}</span>}
                 {/* Carte repliée : l'effectif suffit. Dépliée : ce que le tableau
                     montre réellement, qui peut être tronqué au-delà de PREVIEW. */}
-                <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                <span className="tm-count" style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                   {isOpen
                     ? t('adm.shownOf', { n: shown.length, total: head.members })
                     : t(head.members === 1 ? 'coach.memberOne' : 'coach.memberMany', { n: head.members })}
-                </span>
-                <span aria-hidden="true" style={{ flex: '0 0 30px', width: 30, height: 30, borderRadius: 10,
-                  border: '1px solid var(--border)', display: 'inline-flex', alignItems: 'center',
-                  justifyContent: 'center', fontSize: 15, fontWeight: 700, color: 'var(--muted)' }}>
-                  {isOpen ? '−' : '+'}
                 </span>
               </button>
 
@@ -1238,15 +1269,16 @@ export default function Club() {
                   <div className="cons-grid">
                     {/* ---- Tableau des athlètes ---- */}
                     <div className="card" style={{ marginBottom: 0 }}>
-                      {athleteHeader(false)}
-                      {(!d || d.loading) && (
+                      {foldHead(`ath:${tm.id}`, t('club.athletesN', { n: head.members }), !!folded[`ath:${tm.id}`])}
+                      {!folded[`ath:${tm.id}`] && athleteHeader(false)}
+                      {!folded[`ath:${tm.id}`] && (!d || d.loading) && (
                         <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('common.loading')}</div>
                       )}
-                      {d && !d.loading && all.length === 0 && (
+                      {!folded[`ath:${tm.id}`] && d && !d.loading && all.length === 0 && (
                         <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('club.noMembers')}</div>
                       )}
-                      {shown.map((a) => athleteRow(a, false))}
-                      {all.length > PREVIEW && (
+                      {!folded[`ath:${tm.id}`] && shown.map((a) => athleteRow(a, false))}
+                      {!folded[`ath:${tm.id}`] && all.length > PREVIEW && (
                         <button type="button"
                           onClick={() => setExpanded((m) => ({ ...m, [tm.id]: !showAll }))}
                           style={{ marginTop: 10, border: 'none', background: 'transparent', padding: 0,
@@ -1258,11 +1290,13 @@ export default function Club() {
 
                     {/* ---- Encarts de droite ---- */}
                     <div style={{ display: 'grid', gap: 14 }}>
-                      {panel(t('club.coaches'), (
+                      {panel(head.coaches.length > 3
+                        ? foldHead(`co:${tm.id}`, t('club.coachesN', { n: head.coaches.length }), !!folded[`co:${tm.id}`])
+                        : t('club.coaches'), (
                         <>
                           {head.coaches.length === 0
                             ? <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>{t('club.noCoach')}</div>
-                            : (Array.isArray(head.coachRows) ? head.coachRows : []).map((c) => coachItem(tm, c))}
+                            : !(head.coaches.length > 3 && folded[`co:${tm.id}`]) && (Array.isArray(head.coachRows) ? head.coachRows : []).map((c) => coachItem(tm, c))}
                           {head.coaches.length > 0 && (
                             <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, margin: '6px 0 10px' }}>
                               {t('adm.coachPrivacy')}
