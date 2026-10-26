@@ -6,6 +6,8 @@ import { supabase } from '../../lib/supabaseClient';
 import { loadMyChildren } from '../../lib/children';
 import { useT } from '../../lib/i18n';
 import { getStored, KEY_SPACE, KEY_TEAM, KEY_CLUB } from '../../lib/spaces';
+import EventNotes from '../components/EventNotes';
+import { withNotes } from '../../lib/eventNotes';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 
 /* Calendrier, sur un seul mois, dans la même grille pour tout le monde.
@@ -97,9 +99,9 @@ export default function Calendrier() {
 
     /* Événements : seuls ceux sur lesquels l'enfant est convoqué le concernent. */
     if (ids.length) {
-      const { data: convs } = await supabase.from('event_convocations')
-        .select('player_id, response, events(id, type, datetime, place, opponent)')
-        .in('player_id', ids);
+      const { data: convs } = await withNotes((wn) => supabase.from('event_convocations')
+        .select(`player_id, response, events(id, type, datetime, place, opponent${wn ? ', notes' : ''})`)
+        .in('player_id', ids));
       for (const c of convs || []) {
         const e = c.events;
         if (!e?.datetime) continue;
@@ -110,7 +112,7 @@ export default function Calendrier() {
           key: `e${e.id}-${c.player_id}`, when, day: isoDay(when),
           who: byId.get(c.player_id)?.first_name, kid: byId.get(c.player_id),
           type: e.type, response: c.response,
-          opponent: e.opponent, at: e.datetime, place: e.place,
+          opponent: e.opponent, at: e.datetime, place: e.place, notes: e.notes,
         });
       }
     }
@@ -153,8 +155,8 @@ export default function Calendrier() {
         });
       }
 
-      const { data: evs } = await supabase.from('events')
-        .select('id, team_id, type, datetime, place, opponent').in('team_id', mine);
+      const { data: evs } = await withNotes((wn) => supabase.from('events')
+        .select(`id, team_id, type, datetime, place, opponent${wn ? ', notes' : ''}`).in('team_id', mine));
       for (const e of evs || []) {
         if (!e.datetime || seen.has(`e${e.id}`)) continue;
         const when = new Date(e.datetime);
@@ -163,7 +165,7 @@ export default function Calendrier() {
         out.push({
           key: `ce${e.id}`, when, day: isoDay(when),
           who: tm?.name, club: manyClubs ? tm?.clubs?.name : null,
-          type: e.type, opponent: e.opponent, at: e.datetime, place: e.place,
+          type: e.type, opponent: e.opponent, at: e.datetime, place: e.place, notes: e.notes,
         });
       }
     }
@@ -365,6 +367,7 @@ export default function Calendrier() {
               <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5, marginTop: 3 }}>
                 {[club, detail].filter(Boolean).join(' · ')}
               </div>
+              <EventNotes text={it.notes} />
               {it.response && (
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 600, marginTop: 5 }}>
                   {t(it.response === 'present' ? 'agenda.present' : 'agenda.absent')}

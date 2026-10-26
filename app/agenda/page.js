@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { loadMyChildren, pickChild, setStoredChildId } from '../../lib/children';
 import { useT } from '../../lib/i18n';
+import EventNotes from '../components/EventNotes';
 
 const TICON = { match: '⚽', tournoi: '🏆', stage: '🏕️', sortie: '🚌', reunion: '👥' };
 
@@ -28,7 +29,7 @@ export default function Agenda() {
       .map((c) => ({
         convId: `${c.event_id}:${c.player_id}`, eventId: c.event_id, playerId: c.player_id,
         response: c.response,
-        ev: { type: c.type, datetime: c.datetime, place: c.place, opponent: c.opponent, rsvp_deadline: c.rsvp_deadline },
+        ev: { type: c.type, datetime: c.datetime, place: c.place, opponent: c.opponent, rsvp_deadline: c.rsvp_deadline, notes: c.notes },
       }))
       .sort((a, b) => new Date(a.ev.datetime) - new Date(b.ev.datetime));
     setItems(rows);
@@ -127,6 +128,7 @@ export default function Agenda() {
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
               {fmt(i.ev.datetime, lang)}{i.ev.place ? ` · ${i.ev.place}` : ''}
             </div>
+            <EventNotes text={i.ev.notes} />
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
               <button type="button" disabled={busyId === i.convId} onClick={() => respond(i, 'present')}
                 style={btn(i.response === 'present', '#1E7B34', '#E6F4EA')}>{t('agenda.present')}</button>

@@ -5,6 +5,7 @@ import Icon from './Icon';
 import Accordion from './Accordion';
 import { useT } from '../../lib/i18n';
 import { firstNameOf, initialsOfName } from '../../lib/userName';
+import EventNotes from './EventNotes';
 
 /* Vue « Journée sportive » du parent. Composant purement présentatif : toutes les
    données arrivent en props depuis l'accueil, qui reste seul à parler à Supabase.
@@ -403,6 +404,7 @@ export default function ParentJournal({
               evDate && t('journal.kickoff', { time: hhmm(nextEvent.datetime, lang) }),
             ].filter(Boolean).join(' · ')}
           </div>
+          <EventNotes text={nextEvent.notes} />
           {/* Boutons visuels : la réponse du parent sera câblée avec le reste du
               flux de convocation. L'état affiché dessous, lui, vient de la base. */}
           <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>

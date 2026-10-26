@@ -2,6 +2,7 @@
 
 import { useT } from '../../lib/i18n';
 import { firstNameOf, initialsOfName } from '../../lib/userName';
+import EventNotes from './EventNotes';
 
 /* Vue « Aujourd'hui » de l'athlète, au tutoiement. Composant purement présentatif :
    l'accueil reste seul à parler à Supabase et passe tout en props.
@@ -260,6 +261,7 @@ export default function AthleteToday({
                       affiché est celui du coup d'envoi. */}
                   {[dayLong(e.datetime, lang), hhmm(e.datetime, lang), e.place].filter(Boolean).join(' · ')}
                 </div>
+                <EventNotes text={e.notes} />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', marginTop: 10 }}>
                   {c.response === 'present' && <Chip>{t('athlete.confirmed')}</Chip>}
                   {c.response === 'absent' && <Chip tone="orange">{t('athlete.declined')}</Chip>}

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
 import { getStored, KEY_TEAM } from '../../lib/spaces';
+import { NOTES_MAX, withNotes } from '../../lib/eventNotes';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 
 /* Écran Événements du coach : poser un match et convoquer le groupe.
@@ -54,6 +55,8 @@ export default function Evenements() {
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [deadline, setDeadline] = useState('');
+  const [notes, setNotes] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
   const [busy, setBusy] = useState(false);
@@ -105,9 +108,9 @@ export default function Evenements() {
     }
     setPlayers(list.map((p) => ({ ...p, hasParent: linked.has(p.id) })));
 
-    const { data: evs } = await supabase.from('events')
-      .select('id, type, datetime, place, opponent, rsvp_deadline')
-      .eq('team_id', tid).order('datetime', { ascending: true });
+    const { data: evs } = await withNotes((wn) => supabase.from('events')
+      .select(`id, type, datetime, place, opponent, rsvp_deadline${wn ? ', notes' : ''}`)
+      .eq('team_id', tid).order('datetime', { ascending: true }));
     setEvents(evs || []);
   }, []);
 
@@ -135,10 +138,11 @@ export default function Evenements() {
     setEventId(id);
     setErr('');
     const ev = events.find((e) => e.id === id);
-    if (!ev) { setOpponent(''); setPlace(''); setDate(''); setTime(''); setDeadline(''); return; }
+    if (!ev) { setOpponent(''); setPlace(''); setDate(''); setTime(''); setDeadline(''); setNotes(''); return; }
     setType(ev.type);
     setOpponent(ev.opponent || '');
     setPlace(ev.place || '');
+    setNotes(ev.notes || '');
     if (ev.datetime) {
       const d = new Date(ev.datetime);
       setDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
@@ -164,6 +168,21 @@ export default function Evenements() {
     } finally { setResending(false); }
   }
 
+  /* Les précisions restent modifiables après publication : seul champ de
+     l'événement qu'on peut encore changer, via une RPC réservée au staff. */
+  async function saveNotes() {
+    setErr(''); setSavingNotes(true);
+    try {
+      const { error } = await supabase.rpc('update_event_notes', { p_event: eventId, p_notes: notes });
+      if (error) throw error;
+      await loadTeam(teamId);
+      flash(t('evt.notesSaved'));
+    } catch (e) {
+      console.error('[update_event_notes]', e);
+      setErr(rpcMsg(e));
+    } finally { setSavingNotes(false); }
+  }
+
   async function send() {
     setErr(''); setBusy(true);
     try {
@@ -176,6 +195,9 @@ export default function Evenements() {
         p_team: teamId, p_type: type, p_datetime: new Date(`${date}T${time}`).toISOString(),
         p_place: place || null, p_opponent: TMAP[type].hasOpponent ? (opponent || null) : null,
         p_rsvp_deadline: rsvp,
+        /* Envoyé seulement s'il est rempli : un événement sans précision reste
+           créable même avant l'application de la migration. */
+        ...(notes.trim() ? { p_notes: notes.trim() } : {}),
       });
       if (error) throw error;
       await loadTeam(teamId);
@@ -298,6 +320,26 @@ export default function Evenements() {
                 <input className="input" type="date" style={{ marginBottom: 0 }} value={deadline}
                   disabled={locked} onChange={(e) => setDeadline(e.target.value)} />
               </div>
+            </div>
+
+            {/* Consignes pour les familles : modifiables même après publication. */}
+            <div style={{ marginTop: 14 }}>
+              {field(t('evt.notes'))}
+              <textarea className="input" rows={4} value={notes} maxLength={NOTES_MAX}
+                onChange={(e) => setNotes(e.target.value)} placeholder={t('evt.notesPh')}
+                style={{ resize: 'vertical', marginBottom: 4, whiteSpace: 'pre-wrap' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10,
+                fontSize: 11, color: 'var(--muted)' }}>
+                <span>{t('evt.notesHint')}</span>
+                <span style={{ flex: '0 0 auto' }}>{t('evt.notesCount', { n: notes.length, max: NOTES_MAX })}</span>
+              </div>
+              {locked && (
+                <button type="button" className="btn ghost" style={{ marginTop: 10, marginBottom: 0 }}
+                  disabled={savingNotes || notes === (events.find((e) => e.id === eventId)?.notes || '')}
+                  onClick={saveNotes}>
+                  {savingNotes ? t('evt.sending') : t('evt.notesSave')}
+                </button>
+              )}
             </div>
           </div>
 

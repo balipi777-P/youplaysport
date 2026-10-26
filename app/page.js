@@ -11,6 +11,7 @@ import BottomNav, { BOTTOM_NAV_HEIGHT } from './components/BottomNav';
 import ClubAvatar from './components/ClubAvatar';
 import { NAME_EVENT, fetchMyName } from '../lib/userName';
 import ParentJournal from './components/ParentJournal';
+import { withNotes } from '../lib/eventNotes';
 import AthleteToday from './components/AthleteToday';
 import CoachGroups from './components/CoachGroups';
 import PendingLinks from './components/PendingLinks';
@@ -99,11 +100,11 @@ export default function Home() {
   const loadUpcoming = useCallback(async (p, withNotebook) => {
     let ev = null;
     if (p.team_id) {
-      const { data: evs } = await supabase
-        .from('events').select('id, type, opponent, place, datetime, rsvp_deadline')
+      const { data: evs } = await withNotes((wn) => supabase
+        .from('events').select(`id, type, opponent, place, datetime, rsvp_deadline${wn ? ', notes' : ''}`)
         .eq('team_id', p.team_id)
         .gte('datetime', new Date().toISOString())
-        .order('datetime').limit(1);
+        .order('datetime').limit(1));
       ev = (evs && evs[0]) || null;
     }
     setNextEvent(ev);
@@ -133,9 +134,9 @@ export default function Home() {
     setTodaySession(today);
 
     /* Toutes les convocations à venir, et pas seulement la prochaine. */
-    const { data: cs } = await supabase.from('event_convocations')
-      .select('id, response, responded_at, events(id, type, opponent, place, datetime, rsvp_deadline)')
-      .eq('player_id', p.id);
+    const { data: cs } = await withNotes((wn) => supabase.from('event_convocations')
+      .select(`id, response, responded_at, events(id, type, opponent, place, datetime, rsvp_deadline${wn ? ', notes' : ''})`)
+      .eq('player_id', p.id));
     setConvocations((cs || [])
       .filter((c) => c.events?.datetime && new Date(c.events.datetime) >= new Date())
       .sort((a, b) => new Date(a.events.datetime) - new Date(b.events.datetime)));
