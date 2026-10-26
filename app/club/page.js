@@ -147,6 +147,7 @@ export default function Club() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [welcomeSkipped, setWelcomeSkipped] = useState(false);
   const [club, setClub] = useState(null);
+  const clubId = club?.id;
   const [sports, setSports] = useState([]);
   const [teams, setTeams] = useState([]);
   const [teamId, setTeamId] = useState('');
@@ -271,6 +272,7 @@ export default function Club() {
    * langue relancerait toutes ces requêtes.
    */
   const buildAthletesRaw = useCallback(async (teamIds) => {
+    if (!clubId) return [];
     if (!teamIds.length) return [];
     const { data: pls } = await supabase.from('players')
       .select('id, first_name, last_name, team_id, user_id').in('team_id', teamIds).order('first_name');
@@ -278,10 +280,13 @@ export default function Club() {
     const pids = roster.map((p) => p.id);
     if (!pids.length) return [];
 
-    // Rattachements parents : lisibles par le dirigeant (can_manage_player).
-    const { data: lk } = await supabase.from('player_parents')
-      .select('player_id, parent_user_id, status').in('player_id', pids);
-    const links = lk || [];
+    /* Rattachements parents + noms : app_users n'est pas lisible par le dirigeant,
+       la fonction SECURITY DEFINER renvoie nom (ou email masqué) et statut, pour
+       les seuls joueurs de son club. */
+    const { data: lk, error: lkErr } = await supabase.schema('yps')
+      .rpc('parents_for_admin', { p_club: clubId });
+    if (lkErr) console.error('parents_for_admin', lkErr);
+    const links = (lk || []).filter((l) => pids.includes(l.player_id));
 
     // Séances publiées de chaque équipe = dénominateur des présences.
     const { data: ss } = await supabase.from('sessions')
@@ -297,18 +302,11 @@ export default function Club() {
       for (const a of data || []) presents[a.player_id] = (presents[a.player_id] || 0) + 1;
     }
 
-    // Un seul aller-retour pour tous les noms de parents.
-    const uids = [...new Set(links.map((l) => l.parent_user_id))];
-    const names = {};
-    if (uids.length) {
-      const { data } = await supabase.from('app_users').select('id, full_name, email').in('id', uids);
-      for (const u of data || []) names[u.id] = accountLabel(u);
-    }
-
     return roster.map((p) => {
-      /* Un rattachement refusé n'existe plus pour le club : il ne compte ni
-         comme parent, ni comme demande en attente. */
-      const mine = links.filter((l) => l.player_id === p.id && (l.status || 'active') !== 'rejected');
+      /* Tous les rattachements sont affichés, refusés compris, avec leur statut ;
+         seuls les non refusés comptent pour « Actif / À valider ». */
+      const all = links.filter((l) => l.player_id === p.id);
+      const mine = all.filter((l) => (l.status || 'active') !== 'rejected');
       /* « À valider » n'est plus une déduction : un rattachement demandé par un
          parent reste en attente jusqu'à ce que le club le valide. Un licencié
          n'est actif que si au moins un de ses liens l'est — ou s'il a son
@@ -318,14 +316,17 @@ export default function Club() {
         id: p.id,
         teamId: p.team_id,
         name: `${p.first_name} ${p.last_name || ''}`.trim(),
-        parents: mine.map((l) => names[l.parent_user_id] || ''),
+        parents: all.map((l) => ({
+          name: l.full_name || l.email_masked || '',
+          status: l.status || 'active',
+        })),
         ownAccount: Boolean(p.user_id),
         linked: anyActive || Boolean(p.user_id),
         presents: presents[p.id] || 0,
         total: held[p.team_id] || 0,
       };
     });
-  }, []);
+  }, [clubId]);
 
   /** Jamais bloquant : en cas d'erreur ou de lenteur, on rend une liste vide. */
   const buildAthletes = useCallback(async (teamIds) => {
@@ -704,7 +705,17 @@ export default function Club() {
 
   /** Colonne « parent / compte » : parent nommé, compte de l'athlète, ou attente. */
   const accountText = (a) => {
-    if (a.parents.length) return a.parents.map(nameOr).join(', ');
+    if (a.parents.length) {
+      return a.parents.map((pr, i) => (
+        <div key={i}>
+          {nameOr(pr.name)}
+          <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700,
+            color: pr.status === 'rejected' ? '#B3261E' : pr.status === 'pending' ? '#9A5B18' : '#1E7B34' }}>
+            · {t(`club.parentSt.${pr.status}`)}
+          </span>
+        </div>
+      ));
+    }
     if (a.ownAccount) return t('adm.ownAccount');
     return t('adm.linkPending');
   };
