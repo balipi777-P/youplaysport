@@ -184,6 +184,8 @@ export default function Club() {
   const [tkBody, setTkBody] = useState('');
   const [tkPriority, setTkPriority] = useState('normal');
   const [tkBusy, setTkBusy] = useState(false);
+  const [pendCoaches, setPendCoaches] = useState([]); // coachs du club sans équipe
+  const [pendTeam, setPendTeam] = useState({});       // {userId: teamId} choisi dans la liste
 
   const flash = (msg) => { setOk(msg); setErr(''); setTimeout(() => setOk(''), 3500); };
 
@@ -197,6 +199,13 @@ export default function Club() {
     const { data, error } = await supabase.schema('yps').rpc('pending_links_for_admin');
     if (error) { console.error('pending_links_for_admin', error); return; }
     setPendings(data || []);
+  }, []);
+
+  /** Coachs entrés avec le code du club mais sans équipe : ils n'ont pas encore d'espace. */
+  const loadPendCoaches = useCallback(async (clubId) => {
+    const { data, error } = await supabase.schema('yps').rpc('pending_coaches_for_admin', { p_club: clubId });
+    if (error) { console.error('pending_coaches_for_admin', error); return; }
+    setPendCoaches(data || []);
   }, []);
 
   /** Licenciés = count sur players ; coachs = distinct coach_user_id. */
@@ -387,13 +396,14 @@ export default function Club() {
           supabase.from('support_tickets').select('id, subject, status, priority, created_at').eq('club_id', c.id).order('created_at', { ascending: false }),
           loadPendings(),
         ]);
+        await loadPendCoaches(c.id);
         setSeasons(se.data || []);
         setDocuments(doc.data || []);
         setTickets(tk.data || []);
       }
       } catch (e) { console.error('club init', e); } finally { setReady(true); }
     })();
-  }, [router, loadTeams, loadPendings]);
+  }, [router, loadTeams, loadPendings, loadPendCoaches]);
 
   /* La couleur principale du club devient l'accent de toute l'UI du club. */
   const accent = club && isHex(club.accent_color) ? club.accent_color : null;
@@ -547,6 +557,7 @@ export default function Club() {
       clear(); flash(t('club.coachLinked'));
       await loadStats(club.id, teams);
       await loadHeads(teams);
+      await loadPendCoaches(club.id);
     } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
   }
 
@@ -946,6 +957,36 @@ export default function Club() {
           <span className="pill" style={{ background: '#fff', marginBottom: 8 }}>{t('adm.isolation')}</span>
           <div style={{ fontSize: 13, color: '#7A4030', lineHeight: 1.6 }}>{t('adm.isolationText')}</div>
         </div>
+
+        {pendCoaches.length > 0 && (
+          <div className="card" style={{ border: '1px solid #F6E4C4', background: '#FFF6E9' }}>
+            <span className="pill" style={{ background: '#fff', marginBottom: 8 }}>
+              {t('adm.pendCoach.title')} · {pendCoaches.length}
+            </span>
+            <div style={{ fontSize: 12.5, color: '#7A5A18', lineHeight: 1.5, marginBottom: 8 }}>{t('adm.pendCoach.hint')}</div>
+            {pendCoaches.map((pc) => (
+              <div key={pc.user_id} style={{ borderTop: '1px solid #F6E4C4', padding: '10px 0' }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, overflowWrap: 'anywhere' }}>
+                  {pc.full_name || t('adm.pendCoach.noName')}
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 7, overflowWrap: 'anywhere' }}>{pc.email}</div>
+                <div style={{ display: 'flex', gap: 7 }}>
+                  <select className="input" style={{ marginBottom: 0, flex: 1, minWidth: 0 }}
+                    value={pendTeam[pc.user_id] || ''} aria-label={t('adm.pendCoach.team')}
+                    onChange={(e) => setPendTeam((m) => ({ ...m, [pc.user_id]: e.target.value }))}>
+                    <option value="">{t('adm.pendCoach.team')}</option>
+                    {teams.map((tm) => <option key={tm.id} value={tm.id}>{tm.name}</option>)}
+                  </select>
+                  <button type="button" className="btn ghost" style={{ width: 'auto', padding: '0 14px', whiteSpace: 'nowrap' }}
+                    disabled={busy || !pendTeam[pc.user_id]}
+                    onClick={() => linkCoach(pendTeam[pc.user_id], pc.email || '', () => {})}>
+                    {t('adm.pendCoach.attach')}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {teams.length === 0 && (
           <div className="card"><p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>{t('club.noTeam')}</p></div>

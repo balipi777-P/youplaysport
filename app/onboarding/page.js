@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { useT, LangToggle } from '../../lib/i18n';
 import {
-  fetchMySpaces, listSpaces, validStoredSpace, enterSpace, setStored, KEY_SPACE, KEY_CLUB,
+  fetchMySpaces, listSpaces, validStoredSpace, enterSpace, setStored, fetchPendingMembership, KEY_SPACE, KEY_CLUB,
 } from '../../lib/spaces';
+import WaitingAttach from '../components/WaitingAttach';
 
 const ROLE_KEYS = [
   { key: 'parent', emoji: '👨‍👩‍👧' },
@@ -26,6 +27,7 @@ export default function Onboarding() {
   const [consent, setConsent] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [waiting, setWaiting] = useState(null); // { role, clubName } : rôle rejoint, pas encore rattaché
 
   useEffect(() => {
     (async () => {
@@ -39,6 +41,8 @@ export default function Onboarding() {
         window.location.replace(enterSpace(space, d));
         return;
       }
+      /* Un rôle dans un club mais aucun espace : on attend le rattachement, pas de retour au choix du profil. */
+      setWaiting(await fetchPendingMembership());
       setReady(true);
     })();
   }, [router]);
@@ -55,8 +59,10 @@ export default function Onboarding() {
       if (clubId && space === 'admin') setStored(KEY_CLUB, clubId);
     }
     /* enterSpace complète le contexte (enfant / équipe / club) quand my_spaces le connaît. */
-    const href = d && listSpaces(d).includes(space) ? enterSpace(space, d) : '/';
-    window.location.replace(href);
+    if (d && listSpaces(d).includes(space)) { window.location.replace(enterSpace(space, d)); return; }
+    const pending = await fetchPendingMembership();
+    if (pending) { setWaiting(pending); return; }
+    window.location.replace('/');
   }
 
   async function submit() {
@@ -92,6 +98,7 @@ export default function Onboarding() {
   }
 
   if (!ready) return <div className="wrap"><p style={{ color: 'var(--muted)' }}>{t('common.loading')}</p></div>;
+  if (waiting) return <WaitingAttach role={waiting.role} clubName={waiting.clubName} />;
 
   return (
     <div className="wrap">
