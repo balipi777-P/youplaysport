@@ -884,7 +884,7 @@ export default function Club() {
   };
 
   /* Un coach d'une équipe : déplacer vers une autre équipe ou retirer le rattachement. */
-  const coachLine = (tm, c) => {
+  const coachItem = (tm, c) => {
     const mv = moveCoach && moveCoach.uid === c.id && moveCoach.from === tm.id ? moveCoach : null;
     return (
       <div key={c.id} style={{ marginBottom: 8 }}>
@@ -1262,7 +1262,7 @@ export default function Club() {
                         <>
                           {head.coaches.length === 0
                             ? <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>{t('club.noCoach')}</div>
-                            : (head.coachRows || []).map((c) => coachLine(tm, c))}
+                            : (Array.isArray(head.coachRows) ? head.coachRows : []).map((c) => coachItem(tm, c))}
                           {head.coaches.length > 0 && (
                             <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, margin: '6px 0 10px' }}>
                               {t('adm.coachPrivacy')}
@@ -1367,7 +1367,7 @@ export default function Club() {
                 <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{tm.name}</div>
                 {head.coaches.length === 0
                   ? <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>{t('club.noCoach')}</div>
-                  : (head.coachRows || []).map((c) => coachLine(tm, c))}
+                  : (Array.isArray(head.coachRows) ? head.coachRows : []).map((c) => coachItem(tm, c))}
                 <div style={{ display: 'flex', gap: 7, marginTop: 10 }}>
                   <input className="input" style={{ marginBottom: 0, flex: 1, minWidth: 0 }}
                     value={teamCoachEmail[tm.id] || ''}
