@@ -183,6 +183,7 @@ export default function Club() {
   const [tkSubject, setTkSubject] = useState('');
   const [tkBody, setTkBody] = useState('');
   const [tkPriority, setTkPriority] = useState('normal');
+  const [tkBusy, setTkBusy] = useState(false);
 
   const flash = (msg) => { setOk(msg); setErr(''); setTimeout(() => setOk(''), 3500); };
 
@@ -849,7 +850,6 @@ export default function Club() {
     flash(t(approve ? 'adm.lic.linkValidated' : 'adm.lic.linkRejected'));
   }
 
-  const [tkBusy, setTkBusy] = useState(false);
   /** Crée un ticket pour ce club (RLS : réservé à ses dirigeants) puis recharge la liste. */
   async function sendTicket() {
     const subject = tkSubject.trim();
