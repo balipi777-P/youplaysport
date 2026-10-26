@@ -212,9 +212,12 @@ export default function Club() {
   /** Licenciés = count sur players ; coachs = distinct coach_user_id. */
   const loadStats = useCallback(async (clubId, teamRows) => {
     try {
-      const { data: rows, count } = await withTimeout(
-        supabase.from('players').select('id', { count: 'planned' }).eq('club_id', clubId));
-      setMemberCount(count ?? (rows || []).length);
+      /* 'exact' : 'planned' n'est qu'une estimation des statistiques Postgres,
+         fausse sur une petite table (affichait 2 pour 20 licenciés). */
+      const { count, error } = await withTimeout(
+        supabase.from('players').select('id', { count: 'exact', head: true }).eq('club_id', clubId));
+      if (error) throw error;
+      setMemberCount(count ?? 0);
     } catch (e) { console.error('loadStats players', e); setMemberCount(0); }
     const ids = (teamRows || []).map((tm) => tm.id);
     if (ids.length === 0) { setCoachCount(0); return; }
