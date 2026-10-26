@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../lib/supabaseClient';
 import { loadMyChildren, pickChild, setStoredChildId } from '../lib/children';
-import { getStored, KEY_CLUB, KEY_TEAM, fetchMySpaces, validStoredSpace } from '../lib/spaces';
+import { getStored, KEY_CLUB, fetchMySpaces, validStoredSpace } from '../lib/spaces';
 import { useT, LangToggle } from '../lib/i18n';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from './components/BottomNav';
 import ClubAvatar from './components/ClubAvatar';
@@ -384,10 +384,10 @@ export default function Home() {
      de langue ne relance aucune requête. */
   const weekdayName = (d) => new Date(Date.UTC(2024, 0, 7 + d))
     .toLocaleDateString(lang === 'en' ? 'en-GB' : 'fr-FR', { weekday: 'long', timeZone: 'UTC' });
-  const curTeam = getStored(KEY_TEAM);
-  const scopedTeams = space === 'coach' && staffTeams.some((tm) => tm.id === curTeam)
-    ? staffTeams.filter((tm) => tm.id === curTeam)
-    : space === 'admin' && staffTeams.some((tm) => tm.club_id === curClub)
+  /* « Mes groupes » liste toutes les équipes du coach : l'équipe mémorisée par le
+     sélecteur d'espace ne doit pas masquer les autres. Seul le dirigeant est
+     borné au club choisi. */
+  const scopedTeams = space === 'admin' && staffTeams.some((tm) => tm.club_id === curClub)
       ? staffTeams.filter((tm) => tm.club_id === curClub)
       : staffTeams;
   const coachTeams = scopedTeams.map((tm) => ({
