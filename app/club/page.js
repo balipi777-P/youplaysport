@@ -145,13 +145,6 @@ export default function Club() {
   const { t, lang } = useT();
   const [ready, setReady] = useState(false);
   const [section, setSection] = useState('teams');
-  /* Les verrous de la base (équipe, coach, déplacement de joueur) renvoient le
-     même texte que la mention affichée en haut : contacter le support. */
-  const fe = (e, fallback) => {
-    const m = `${(e && e.message) || ''}`;
-    if (/team_locked|coach_locked|player_move_locked/.test(m)) return t('club.locked');
-    return friendlyError(e, fallback);
-  };
   const [menuOpen, setMenuOpen] = useState(false);
   const [welcomeSkipped, setWelcomeSkipped] = useState(false);
   const [club, setClub] = useState(null);
@@ -195,6 +188,9 @@ export default function Club() {
   const [tkPriority, setTkPriority] = useState('normal');
   const [tkBusy, setTkBusy] = useState(false);
   const [pendCoaches, setPendCoaches] = useState([]); // coachs du club sans équipe
+  const [delTeam, setDelTeam] = useState(null);    // {id, step: 1|2, typed}
+  const [moveCoach, setMoveCoach] = useState(null);  // {uid, from, to}
+  const [movePl, setMovePl] = useState(null);        // {id, from, to}
   const [pendTeam, setPendTeam] = useState({});       // {userId: teamId} choisi dans la liste
 
   const flash = (msg) => { setOk(msg); setErr(''); setTimeout(() => setOk(''), 3500); };
@@ -267,13 +263,18 @@ export default function Club() {
       map[id] = {
         members: 0,
         coaches: [],
+        coachRows: [],
         weekdays: Object.entries(per[id] || {})
           .filter(([, n]) => n >= 2).map(([d]) => Number(d))
           .sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)),
       };
     }
     for (const p of pls || []) if (map[p.team_id]) map[p.team_id].members += 1;
-    for (const r of cts || []) if (map[r.team_id]) map[r.team_id].coaches.push(names[r.coach_user_id] || '');
+    for (const r of cts || []) {
+      if (!map[r.team_id]) continue;
+      map[r.team_id].coaches.push(names[r.coach_user_id] || '');
+      map[r.team_id].coachRows.push({ id: r.coach_user_id, name: names[r.coach_user_id] || '' });
+    }
     setHeads(map);
   }, []);
 
@@ -504,13 +505,13 @@ export default function Club() {
       if (error) throw error;
       setTeamName(''); setTeamDiscipline(''); flash(t('club.teamCreated'));
       await loadTeams(club.id, data.id);
-    } catch (e) { setErr(fe(e, t('club.errGeneric'))); } finally { setBusy(false); }
+    } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
   }
 
   /** Les RPC de démo renvoient du jsonb ; not_authorized devient un message amical. */
   function demoError(e) {
     if (`${(e && e.message) || ''}`.includes('not_authorized')) return t('club.demoNotAuthorized');
-    return fe(e, t('club.errGeneric'));
+    return friendlyError(e, t('club.errGeneric'));
   }
 
   async function refreshAfterDemo() {
@@ -557,7 +558,7 @@ export default function Club() {
       await loadHeads(teams);
       setEveryone(null);
       if (details[teamId]) await loadTeamDetail(teamId);
-    } catch (e) { setErr(fe(e, t('club.errGeneric'))); } finally { setBusy(false); }
+    } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
   }
 
   async function linkCoach(tid, email, clear) {
@@ -571,7 +572,70 @@ export default function Club() {
       await loadStats(club.id, teams);
       await loadHeads(teams);
       await loadPendCoaches(club.id);
-    } catch (e) { setErr(fe(e, t('club.errGeneric'))); } finally { setBusy(false); }
+    } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
+  }
+
+  /** Recharge ce que l'écran montre après un changement d'équipe, de coach ou de joueur. */
+  async function refreshAll() {
+    await loadStats(club.id, teams);
+    await loadHeads(teams);
+    await loadPendCoaches(club.id);
+    setEveryone(null);
+    for (const id of Object.keys(details)) await loadTeamDetail(id);
+  }
+
+  /**
+   * Suppression d'une équipe. Les joueurs ne sont pas supprimés (players.team_id
+   * est en ON DELETE SET NULL) : on le revérifie quand même après coup en
+   * comparant l'effectif du club avant / après, et on le signale si ça diverge.
+   */
+  async function deleteTeam(tm) {
+    if (!delTeam || delTeam.typed.trim() !== tm.name.trim()) return;
+    setErr(''); setBusy(true);
+    try {
+      const before = await supabase.from('players').select('id', { count: 'exact', head: true }).eq('club_id', club.id);
+      const { error } = await supabase.from('teams').delete().eq('id', tm.id);
+      if (error) throw error;
+      const after = await supabase.from('players').select('id', { count: 'exact', head: true }).eq('club_id', club.id);
+      setDelTeam(null);
+      setOpen((m) => ({ ...m, [tm.id]: false }));
+      setDetails((m) => { const n = { ...m }; delete n[tm.id]; return n; });
+      await loadTeams(club.id);
+      setEveryone(null);
+      if ((before.count ?? 0) > (after.count ?? 0)) setErr(t('club.delLost', { n: (before.count ?? 0) - (after.count ?? 0) }));
+      else flash(t('club.delDone', { name: tm.name }));
+    } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
+  }
+
+  /** Rattache un coach à une autre équipe (to) puis retire l'ancien rattachement ; sans `to`, le retire seulement. */
+  async function changeCoach(uid, from, to) {
+    setErr(''); setBusy(true);
+    try {
+      if (to && to !== from) {
+        const { error: e1 } = await supabase.from('coach_teams').upsert(
+          { coach_user_id: uid, team_id: to }, { onConflict: 'coach_user_id,team_id', ignoreDuplicates: true });
+        if (e1) throw e1;
+      }
+      if (!to || to !== from) {
+        const { error: e2 } = await supabase.from('coach_teams').delete().eq('coach_user_id', uid).eq('team_id', from);
+        if (e2) throw e2;
+      }
+      setMoveCoach(null);
+      flash(t(to ? 'club.coachMoved' : 'club.coachRemoved'));
+      await refreshAll();
+    } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
+  }
+
+  async function movePlayer(pid, to) {
+    if (!to) return;
+    setErr(''); setBusy(true);
+    try {
+      const { error } = await supabase.from('players').update({ team_id: to }).eq('id', pid);
+      if (error) throw error;
+      setMovePl(null);
+      flash(t('club.playerMoved'));
+      await refreshAll();
+    } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
   }
 
   async function linkParent(playerId, tid) {
@@ -584,7 +648,7 @@ export default function Club() {
       setParentEmail((m) => ({ ...m, [playerId]: '' })); flash(t('club.parentLinked'));
       setEveryone(null);
       if (details[tid]) await loadTeamDetail(tid);
-    } catch (e) { setErr(fe(e, t('club.errGeneric'))); } finally { setBusy(false); }
+    } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
   }
 
   /**
@@ -741,10 +805,34 @@ export default function Club() {
     </div>
   );
 
+  const moveBox = (a) => (
+    <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center' }}>
+      <select className="input" style={{ marginBottom: 0, flex: 1, minWidth: 140 }} aria-label={t('club.moveTo')}
+        value={movePl?.id === a.id ? movePl.to : ''}
+        onChange={(e) => setMovePl({ id: a.id, to: e.target.value })}>
+        <option value="">{t('club.moveTo')}</option>
+        {teams.filter((tm) => tm.id !== a.teamId).map((tm) => <option key={tm.id} value={tm.id}>{tm.name}</option>)}
+      </select>
+      <button type="button" className="btn" style={{ width: 'auto', padding: '0 14px' }}
+        disabled={busy || !movePl?.to} onClick={() => movePlayer(a.id, movePl.to)}>{t('club.moveConfirm')}</button>
+      <button type="button" className="btn ghost" style={{ width: 'auto', padding: '0 14px' }}
+        onClick={() => setMovePl(null)}>{t('common.cancel')}</button>
+    </div>
+  );
+
   const athleteRow = (a, withGroup) => (
     <div key={a.id} className="cons-row"
       style={{ borderTop: '1px solid var(--border)', padding: '10px 0' }}>
-      <div style={{ fontWeight: 700, fontSize: 14 }}>{a.name}</div>
+      <div style={{ fontWeight: 700, fontSize: 14 }}>
+        {a.name}
+        {teams.length > 1 && movePl?.id !== a.id && (
+          <div>
+            <button type="button" onClick={() => setMovePl({ id: a.id, to: '' })}
+              style={{ border: 'none', background: 'transparent', padding: 0, font: 'inherit', fontSize: 12,
+                fontWeight: 700, color: 'var(--brand-dark)', cursor: 'pointer' }}>{t('club.movePlayer')}</button>
+          </div>
+        )}
+      </div>
       <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>
         {withGroup ? (teamById[a.teamId]?.name || '—') : accountText(a)}
       </div>
@@ -752,6 +840,7 @@ export default function Club() {
       <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 700, color: 'var(--brand-dark)' }}>
         {a.total > 0 ? `${a.presents}/${a.total}` : '—'}
       </div>
+      {movePl?.id === a.id && moveBox(a)}
     </div>
   );
 
@@ -792,6 +881,89 @@ export default function Club() {
     if (s === 'in_progress' || s === 'pending') return { label: t('adm.sup.inProgress'), bg: '#FFF1E3', ink: '#9A5B18' };
     if (s === 'open') return { label: t('adm.sup.open'), bg: 'var(--peach)', ink: 'var(--brand-dark)' };
     return { label: raw, bg: '#F1EEE8', ink: 'var(--muted)' };
+  };
+
+  /* Un coach d'une équipe : déplacer vers une autre équipe ou retirer le rattachement. */
+  const coachLine = (tm, c) => {
+    const mv = moveCoach && moveCoach.uid === c.id && moveCoach.from === tm.id ? moveCoach : null;
+    return (
+      <div key={c.id} style={{ marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{nameOr(c.name)}</span>
+          {!mv && (
+            <>
+              {teams.length > 1 && (
+                <button type="button" onClick={() => setMoveCoach({ uid: c.id, from: tm.id, to: '' })}
+                  style={{ border: 'none', background: 'transparent', padding: 0, font: 'inherit', fontSize: 12,
+                    fontWeight: 700, color: 'var(--brand-dark)', cursor: 'pointer' }}>{t('club.moveCoach')}</button>
+              )}
+              <button type="button" disabled={busy}
+                onClick={() => { if (window.confirm(t('club.removeCoachConfirm', { name: nameOr(c.name), team: tm.name }))) changeCoach(c.id, tm.id, ''); }}
+                style={{ border: 'none', background: 'transparent', padding: 0, font: 'inherit', fontSize: 12,
+                  fontWeight: 700, color: '#B3261E', cursor: 'pointer' }}>{t('club.removeCoach')}</button>
+            </>
+          )}
+        </div>
+        {mv && (
+          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 6 }}>
+            <select className="input" style={{ marginBottom: 0, flex: 1, minWidth: 140 }} aria-label={t('club.moveTo')}
+              value={mv.to} onChange={(e) => setMoveCoach({ ...mv, to: e.target.value })}>
+              <option value="">{t('club.moveTo')}</option>
+              {teams.filter((x) => x.id !== tm.id).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </select>
+            <button type="button" className="btn" style={{ width: 'auto', padding: '0 14px' }}
+              disabled={busy || !mv.to} onClick={() => changeCoach(c.id, tm.id, mv.to)}>{t('club.moveConfirm')}</button>
+            <button type="button" className="btn ghost" style={{ width: 'auto', padding: '0 14px' }}
+              onClick={() => setMoveCoach(null)}>{t('common.cancel')}</button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /* Suppression d'une équipe en deux temps : récapitulatif, puis saisie du nom. */
+  const deleteBlock = (tm, head) => {
+    const mine = delTeam && delTeam.id === tm.id ? delTeam : null;
+    const nPl = head.members || 0;
+    const nCo = (head.coachRows || []).length;
+    if (!mine) {
+      return (
+        <button type="button" className="btn ghost" style={{ color: '#B3261E', borderColor: '#E9B8B3' }}
+          onClick={() => setDelTeam({ id: tm.id, step: 1, typed: '' })}>{t('club.delTeam')}</button>
+      );
+    }
+    return (
+      <div style={{ border: '1px solid #E9B8B3', borderRadius: 12, padding: 12, background: '#FFF4F2' }}>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>{t('club.delTitle', { name: tm.name })}</div>
+        <div style={{ fontSize: 12.5, lineHeight: 1.55, color: '#5F2A1C' }}>
+          <div>{nPl > 0 ? t(nPl === 1 ? 'club.delPlayers1' : 'club.delPlayersN', { n: nPl }) : t('club.delPlayers0')}</div>
+          <div>{nCo > 0 ? t(nCo === 1 ? 'club.delCoaches1' : 'club.delCoachesN', { n: nCo }) : t('club.delCoaches0')}</div>
+          <div style={{ marginTop: 4 }}>{t('club.delCascade')}</div>
+        </div>
+        {mine.step === 1 ? (
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button type="button" className="btn" style={{ width: 'auto', padding: '0 14px', background: '#B3261E' }}
+              onClick={() => setDelTeam({ ...mine, step: 2 })}>{t('club.delContinue')}</button>
+            <button type="button" className="btn ghost" style={{ width: 'auto', padding: '0 14px' }}
+              onClick={() => setDelTeam(null)}>{t('common.cancel')}</button>
+          </div>
+        ) : (
+          <div style={{ marginTop: 10 }}>
+            <label className="label" htmlFor={`del-${tm.id}`}>{t('club.delType', { name: tm.name })}</label>
+            <input id={`del-${tm.id}`} className="input" style={{ margin: '6px 0 8px' }} autoComplete="off"
+              value={mine.typed} onChange={(e) => setDelTeam({ ...mine, typed: e.target.value })} placeholder={tm.name} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" className="btn" style={{ width: 'auto', padding: '0 14px', background: '#B3261E' }}
+                disabled={busy || mine.typed.trim() !== tm.name.trim()} onClick={() => deleteTeam(tm)}>
+                {t('club.delFinal')}
+              </button>
+              <button type="button" className="btn ghost" style={{ width: 'auto', padding: '0 14px' }}
+                onClick={() => setDelTeam(null)}>{t('common.cancel')}</button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   const panel = (title, children) => (
@@ -1090,9 +1262,7 @@ export default function Club() {
                         <>
                           {head.coaches.length === 0
                             ? <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>{t('club.noCoach')}</div>
-                            : head.coaches.map((c, i) => (
-                              <div key={i} style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>{nameOr(c)}</div>
-                            ))}
+                            : (head.coachRows || []).map((c) => coachLine(tm, c))}
                           {head.coaches.length > 0 && (
                             <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, margin: '6px 0 10px' }}>
                               {t('adm.coachPrivacy')}
@@ -1132,6 +1302,8 @@ export default function Club() {
                           </div>
                         </>
                       ))}
+
+                      {deleteBlock(tm, head)}
                     </div>
                   </div>
                 </div>
@@ -1195,9 +1367,7 @@ export default function Club() {
                 <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{tm.name}</div>
                 {head.coaches.length === 0
                   ? <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>{t('club.noCoach')}</div>
-                  : head.coaches.map((c, i) => (
-                    <div key={i} style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>{nameOr(c)}</div>
-                  ))}
+                  : (head.coachRows || []).map((c) => coachLine(tm, c))}
                 <div style={{ display: 'flex', gap: 7, marginTop: 10 }}>
                   <input className="input" style={{ marginBottom: 0, flex: 1, minWidth: 0 }}
                     value={teamCoachEmail[tm.id] || ''}
@@ -1599,13 +1769,6 @@ export default function Club() {
 
         {/* ===================== Zone de contenu ===================== */}
         <main className="cons-main">
-          {['teams', 'athletes', 'coaches', 'licences'].includes(section) && (
-            <p style={{ margin: '0 0 12px', fontSize: 12.5, lineHeight: 1.5, color: 'var(--muted)' }}>
-              {t('club.lockedA')}{' '}
-              <a href="#" onClick={(e) => { e.preventDefault(); setSection('support'); setErr(''); }}
-                style={{ fontWeight: 700 }}>{t('club.lockedLink')}</a>.
-            </p>
-          )}
           {err && <div className="error" role="alert">{err}</div>}
           {ok && <div className="pill" style={{ marginBottom: 12 }}>{ok}</div>}
           {current}

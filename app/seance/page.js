@@ -68,6 +68,9 @@ export default function Seance() {
   const [theme, setTheme] = useState('');
   const [themeCustom, setThemeCustom] = useState('');
   const [teamPlayers, setTeamPlayers] = useState([]);
+  const [movePl, setMovePl] = useState(null); // {id, to} — « Déplacer le joueur »
+  const [moveBusy, setMoveBusy] = useState(false);
+  const [moveMsg, setMoveMsg] = useState('');
   const [presence, setPresence] = useState({}); // {playerId: 'present'|'late'|'absent'}
   /* Référentiel de compétences du sport, filtré à l'âge du groupe. */
   const [frameworks, setFrameworks] = useState([]);
@@ -178,6 +181,24 @@ export default function Seance() {
     if (!teamId) { setTeam(null); setTeamPlayers([]); setFrameworks([]); setChallenges([]); setThemes([]); return; }
     loadTeam(teamId);
   }, [teamId, loadTeam]);
+
+  /* Déplace un joueur vers une autre équipe de la liste (celles que la personne
+     encadre). La base refuse toute autre destination ; on retire la ligne ici
+     sans recharger, pour ne pas perdre les présences déjà cochées. */
+  async function movePlayer(pid, to) {
+    if (!to) return;
+    setMoveBusy(true); setMoveMsg('');
+    try {
+      const { error } = await supabase.from('players').update({ team_id: to }).eq('id', pid);
+      if (error) throw error;
+      setTeamPlayers((l) => l.filter((p) => p.id !== pid));
+      setPresence((m) => { const n = { ...m }; delete n[pid]; return n; });
+      setMovePl(null);
+      setMoveMsg(t('club.playerMoved'));
+    } catch (e) {
+      setMoveMsg(t('club.errGeneric'));
+    } finally { setMoveBusy(false); }
+  }
 
   function toggleAxis(k) {
     setAxes((a) => {
@@ -431,11 +452,18 @@ export default function Seance() {
                 { k: 'absent', lbl: t('sea.letterAbsent'), full: t('sea.pAbsent'), c: '#C0392B', bg: '#FDECEA' },
               ];
               return (
-                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8,
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
                   padding: '9px 0', borderTop: idx === 0 ? 'none' : '1px solid var(--border)' }}>
                   <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {p.first_name} {p.last_name || ''}
+                    {teams.length > 1 && movePl?.id !== p.id && (
+                      <button type="button" onClick={() => setMovePl({ id: p.id, to: '' })}
+                        style={{ marginLeft: 8, border: 'none', background: 'transparent', padding: 0, font: 'inherit',
+                          fontSize: 12, fontWeight: 700, color: 'var(--brand-dark)', cursor: 'pointer' }}>
+                        {t('club.movePlayer')}
+                      </button>
+                    )}
                   </span>
                   <div style={{ display: 'flex', gap: 5, flex: '0 0 auto' }}>
                     {opts.map((o) => {
@@ -451,9 +479,26 @@ export default function Seance() {
                       );
                     })}
                   </div>
+                  {movePl?.id === p.id && (
+                    <div style={{ flexBasis: '100%', display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                      <select className="input" style={{ marginBottom: 0, flex: 1, minWidth: 140 }}
+                        aria-label={t('club.moveTo')} value={movePl.to}
+                        onChange={(e) => setMovePl({ id: p.id, to: e.target.value })}>
+                        <option value="">{t('club.moveTo')}</option>
+                        {teams.filter((tm) => tm.id !== teamId).map((tm) => <option key={tm.id} value={tm.id}>{tm.name}</option>)}
+                      </select>
+                      <button type="button" className="btn" style={{ width: 'auto', padding: '0 14px' }}
+                        disabled={moveBusy || !movePl.to} onClick={() => movePlayer(p.id, movePl.to)}>
+                        {t('club.moveConfirm')}
+                      </button>
+                      <button type="button" className="btn ghost" style={{ width: 'auto', padding: '0 14px' }}
+                        onClick={() => setMovePl(null)}>{t('common.cancel')}</button>
+                    </div>
+                  )}
                 </div>
               );
             })}
+            {moveMsg && <div role="status" style={{ fontSize: 12.5, fontWeight: 700, marginTop: 10 }}>{moveMsg}</div>}
             <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginTop: 12 }}>
               {t('sea.legend')}
             </div>
