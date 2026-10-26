@@ -5,12 +5,16 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
 import { clearSpaceStorage } from '../../lib/spaces';
+import { exportChildData } from '../../lib/exports';
+import { loadMyChildren } from '../../lib/children';
+import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 
 const DANGER = '#C0392B';
 
 export default function MesDonnees() {
   const router = useRouter();
-  const { t } = useT();
+  const { t, lang } = useT();
+  const [me, setMe] = useState(null);     // { name, email, roles[], clubs[], kids[], teams[] }
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState('');
@@ -22,6 +26,22 @@ export default function MesDonnees() {
     (async () => {
       const { data } = await supabase.auth.getSession();
       if (!data.session) { router.replace('/login'); return; }
+      const uid = data.session.user.id;
+      const [{ data: au }, { data: mem }, { data: ct }, kids] = await Promise.all([
+        supabase.from('app_users').select('full_name').eq('id', uid).maybeSingle(),
+        supabase.from('memberships').select('role, club_id, clubs(name)'),
+        supabase.from('coach_teams').select('teams(id, name, category, clubs(name))').eq('coach_user_id', uid),
+        loadMyChildren().catch(() => []),
+      ]);
+      const roles = [...new Set((mem || []).map((m) => m.role))];
+      const clubs = [...new Set((mem || []).map((m) => m.clubs?.name).filter(Boolean))];
+      const teams = (ct || []).map((r) => r.teams).filter(Boolean);
+      const own = kids.filter((k) => k.user_id === uid);
+      setMe({
+        name: au?.full_name || '', email: data.session.user.email || '',
+        roles: roles.length ? roles : (kids.length ? ['parent'] : []), clubs, teams,
+        kids: kids.filter((k) => k.user_id !== uid), isAthlete: own.length > 0,
+      });
       setReady(true);
     })();
   }, [router]);
@@ -60,21 +80,115 @@ export default function MesDonnees() {
       const m = `${(e && e.message) || ''}`;
       console.error('delete_my_account', m.split(':')[0]);
       if (m.includes('sole_admin_of_club')) {
-        setErr(t('mydata.errSoleAdmin', { clubs: m.split('sole_admin_of_club:')[1]?.trim() || '' }));
+        const names = m.split('sole_admin_of_club:')[1]?.trim() || '';
+        setErr(t(names.includes(',') ? 'mydata.errSoleAdminMany' : 'mydata.errSoleAdmin', { clubs: names }));
       } else if (m.includes('platform_admin_cannot_self_delete')) setErr(t('mydata.errPlatform'));
       else if (m.includes('not authenticated') || m.includes('not_authorized')) setErr(t('mydata.errNotAuth'));
       else setErr(t('mydata.errDelete'));
     } finally { setBusy(''); }
   }
 
+  async function exportKid(kid) {
+    setBusy(`kid-${kid.id}`); setErr(''); setMsg('');
+    try { await exportChildData(kid); setMsg(t('mydata.exported')); }
+    catch (e) { console.error('export_child_data', e); setErr(t('exp.childErr')); }
+    finally { setBusy(''); }
+  }
+
   if (!ready) return <div className="wrap"><p style={{ color: 'var(--muted)' }}>{t('common.loading')}</p></div>;
 
-  return (
+  const roles = me?.roles || [];
+  const roleLabel = [...roles, ...(me?.isAthlete && !roles.includes('athlete') ? ['athlete'] : [])]
+    .map((r) => t(`role.${r}`)).join(', ');
+  const navRole = roles.includes('admin') ? 'admin' : roles.includes('coach') ? 'coach'
+    : me?.isAthlete ? 'athlete' : 'parent';
+  const erased = [
+    t('mydata.erase.account'),
+    ...(roles.includes('parent') ? [t('mydata.erase.kids')] : []),
+    ...(roles.includes('coach') ? [t('mydata.erase.coach')] : []),
+    ...(roles.includes('admin') ? [t('mydata.erase.admin')] : []),
+  ];
+
+  /* Deuxième temps : l'écran qui dit ce qui sera effacé, puis le mot à taper. */
+  if (confirming) return (
     <div className="wrap">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <a href="#" aria-label={t('common.back')} style={{ fontWeight: 700 }}
+          onClick={(e) => { e.preventDefault(); setConfirming(false); setWord(''); setErr(''); }}>←</a>
+        <div className="q" style={{ fontWeight: 700, fontSize: 18, color: DANGER }}>{t('mydata.confirmT')}</div>
+      </div>
+      <div className="card" style={{ border: `1.5px solid ${DANGER}` }} role="alertdialog" aria-label={t('mydata.confirmT')}>
+        <p style={{ fontSize: 13.5, lineHeight: 1.55, margin: '0 0 8px', fontWeight: 700 }}>{t('mydata.willErase')}</p>
+        <ul style={{ fontSize: 13.5, lineHeight: 1.6, margin: '0 0 12px', paddingLeft: 20 }}>
+          {erased.map((x) => <li key={x}>{x}</li>)}
+        </ul>
+        <p style={{ fontSize: 13, color: '#5A554B', lineHeight: 1.55, margin: '0 0 14px' }}>{t('mydata.dangerD')}</p>
+        <label style={{ display: 'block', fontSize: 13.5, lineHeight: 1.5, marginBottom: 14 }}>
+          <span style={{ display: 'block', marginBottom: 6 }}>{t('mydata.typeLabel')}</span>
+          <input value={word} onChange={(e) => setWord(e.target.value)} autoCapitalize="characters"
+            autoComplete="off" autoCorrect="off" spellCheck={false} aria-label={t('mydata.typeLabel')} />
+        </label>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button type="button" className="btn ghost" style={{ flex: 1 }} disabled={busy !== ''}
+            onClick={() => { setConfirming(false); setWord(''); setErr(''); }}>{t('common.cancel')}</button>
+          <button type="button" className="btn" disabled={!typed || busy !== ''} onClick={deleteAccount}
+            style={{ flex: 1, background: DANGER, opacity: typed ? 1 : 0.5 }}>
+            {busy === 'delete' ? '…' : t('mydata.deleteFinal')}
+          </button>
+        </div>
+        {err && <div className="error" role="alert" style={{ marginTop: 12 }}>{err}</div>}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="wrap" style={{ paddingBottom: BOTTOM_NAV_HEIGHT + 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
         <a href="#" onClick={(e) => { e.preventDefault(); router.back(); }} style={{ fontWeight: 700 }} aria-label={t('common.back')}>←</a>
         <div className="q" style={{ fontWeight: 700, fontSize: 18 }}>{t('mydata.title')}</div>
       </div>
+
+      <div className="card">
+        {[[t('mydata.name'), me?.name || '—'], [t('mydata.email'), me?.email || '—'],
+          [t('mydata.role'), roleLabel || '—'], [t('mydata.club'), (me?.clubs || []).join(', ') || '—']].map(([k, v]) => (
+          <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '6px 0', fontSize: 14 }}>
+            <span style={{ color: 'var(--muted)' }}>{k}</span>
+            <span style={{ fontWeight: 700, textAlign: 'right', overflowWrap: 'anywhere' }}>{v}</span>
+          </div>
+        ))}
+      </div>
+
+      {me?.kids.length > 0 && (
+        <div className="card">
+          <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{t('mydata.kids')}</div>
+          {me.kids.map((k) => (
+            <div key={k.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0' }}>
+              <div style={{ flex: 1, minWidth: 0, fontSize: 14 }}>
+                <b>{[k.first_name, k.last_name].filter(Boolean).join(' ')}</b>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  {[k.teams?.clubs?.name, k.teams?.name].filter(Boolean).join(' · ')}
+                </div>
+              </div>
+              <button type="button" className="btn ghost" style={{ width: 'auto', padding: '8px 12px', fontSize: 13, marginBottom: 0 }}
+                disabled={busy !== ''} onClick={() => exportKid(k)}>
+                {busy === `kid-${k.id}` ? '…' : t('mydata.kidExport')}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {me?.teams.length > 0 && (
+        <div className="card">
+          <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{t('mydata.teams')}</div>
+          {me.teams.map((tm) => (
+            <div key={tm.id} style={{ padding: '4px 0', fontSize: 14 }}>
+              <b>{tm.name}</b>
+              <span style={{ color: 'var(--muted)', fontSize: 12 }}> {[tm.category, tm.clubs?.name].filter(Boolean).join(' · ')}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="card">
         <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>{t('mydata.exportT')}</div>
@@ -88,31 +202,13 @@ export default function MesDonnees() {
       <div className="card" style={{ border: `1.5px solid ${DANGER}` }}>
         <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 6, color: DANGER }}>{t('mydata.dangerT')}</div>
         <p style={{ fontSize: 13, color: '#5A554B', lineHeight: 1.55, margin: '0 0 14px' }}>{t('mydata.dangerD')}</p>
-        {!confirming ? (
-          <button type="button" className="btn" onClick={() => { setConfirming(true); setErr(''); }}
-            style={{ background: 'transparent', color: DANGER, border: `1.5px solid ${DANGER}` }}>
-            {t('mydata.deleteCta')}
-          </button>
-        ) : (
-          <div role="alertdialog" aria-label={t('mydata.confirmT')}>
-            <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10 }}>{t('mydata.confirmT')}</div>
-            <label style={{ display: 'block', fontSize: 13.5, lineHeight: 1.5, marginBottom: 14 }}>
-              <span style={{ display: 'block', marginBottom: 6 }}>{t('mydata.typeLabel')}</span>
-              <input value={word} onChange={(e) => setWord(e.target.value)} autoCapitalize="characters"
-                autoComplete="off" autoCorrect="off" spellCheck={false} aria-label={t('mydata.typeLabel')} />
-            </label>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button type="button" className="btn ghost" style={{ flex: 1 }} disabled={busy !== ''}
-                onClick={() => { setConfirming(false); setWord(''); setErr(''); }}>{t('common.cancel')}</button>
-              <button type="button" className="btn" disabled={!typed || busy !== ''} onClick={deleteAccount}
-                style={{ flex: 1, background: DANGER, opacity: typed ? 1 : 0.5 }}>
-                {busy === 'delete' ? '…' : t('mydata.deleteFinal')}
-              </button>
-            </div>
-          </div>
-        )}
-        {err && <div className="error" style={{ marginTop: 12 }}>{err}</div>}
+        <button type="button" className="btn" onClick={() => { setConfirming(true); setErr(''); setWord(''); }}
+          style={{ background: 'transparent', color: DANGER, border: `1.5px solid ${DANGER}` }}>
+          {t('mydata.deleteCta')}
+        </button>
+        {err && <div className="error" role="alert" style={{ marginTop: 12 }}>{err}</div>}
       </div>
+      <BottomNav role={navRole} />
     </div>
   );
 }

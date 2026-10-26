@@ -12,6 +12,7 @@ const STAFF_TABS = [
   { href: '/seance', icon: 'session', key: 'nav.session' },
   { href: '/evenements', icon: 'events', key: 'nav.events' },
   { href: '/calendrier', icon: 'calendar', key: 'nav.calendar' },
+  { href: '/mes-donnees', icon: 'user', key: 'nav.myProfile' },
 ];
 
 const TABS = {
@@ -27,6 +28,7 @@ const TABS = {
     { href: '/carnet', icon: 'star', key: 'nav.carnet' },
     { href: '/calendrier', icon: 'calendar', key: 'nav.calendar' },
     { href: '/alertes', icon: 'bell', key: 'nav.alerts' },
+    { href: '/mes-donnees', icon: 'user', key: 'nav.myProfile' },
   ],
   coach: STAFF_TABS,
   admin: STAFF_TABS,

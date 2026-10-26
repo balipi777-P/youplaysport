@@ -145,6 +145,13 @@ export default function Club() {
   const { t, lang } = useT();
   const [ready, setReady] = useState(false);
   const [section, setSection] = useState('teams');
+  /* Les verrous de la base (équipe, coach, déplacement de joueur) renvoient le
+     même texte que la mention affichée en haut : contacter le support. */
+  const fe = (e, fallback) => {
+    const m = `${(e && e.message) || ''}`;
+    if (/team_locked|coach_locked|player_move_locked/.test(m)) return t('club.locked');
+    return friendlyError(e, fallback);
+  };
   const [menuOpen, setMenuOpen] = useState(false);
   const [welcomeSkipped, setWelcomeSkipped] = useState(false);
   const [club, setClub] = useState(null);
@@ -497,13 +504,13 @@ export default function Club() {
       if (error) throw error;
       setTeamName(''); setTeamDiscipline(''); flash(t('club.teamCreated'));
       await loadTeams(club.id, data.id);
-    } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
+    } catch (e) { setErr(fe(e, t('club.errGeneric'))); } finally { setBusy(false); }
   }
 
   /** Les RPC de démo renvoient du jsonb ; not_authorized devient un message amical. */
   function demoError(e) {
     if (`${(e && e.message) || ''}`.includes('not_authorized')) return t('club.demoNotAuthorized');
-    return friendlyError(e, t('club.errGeneric'));
+    return fe(e, t('club.errGeneric'));
   }
 
   async function refreshAfterDemo() {
@@ -550,7 +557,7 @@ export default function Club() {
       await loadHeads(teams);
       setEveryone(null);
       if (details[teamId]) await loadTeamDetail(teamId);
-    } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
+    } catch (e) { setErr(fe(e, t('club.errGeneric'))); } finally { setBusy(false); }
   }
 
   async function linkCoach(tid, email, clear) {
@@ -564,7 +571,7 @@ export default function Club() {
       await loadStats(club.id, teams);
       await loadHeads(teams);
       await loadPendCoaches(club.id);
-    } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
+    } catch (e) { setErr(fe(e, t('club.errGeneric'))); } finally { setBusy(false); }
   }
 
   async function linkParent(playerId, tid) {
@@ -577,7 +584,7 @@ export default function Club() {
       setParentEmail((m) => ({ ...m, [playerId]: '' })); flash(t('club.parentLinked'));
       setEveryone(null);
       if (details[tid]) await loadTeamDetail(tid);
-    } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
+    } catch (e) { setErr(fe(e, t('club.errGeneric'))); } finally { setBusy(false); }
   }
 
   /**
@@ -1576,6 +1583,11 @@ export default function Club() {
               </button>
             </div>
 
+            <button type="button" onClick={() => router.push('/mes-donnees')}
+              style={{ border: 'none', background: 'transparent', color: 'var(--brand-dark)', fontFamily: 'inherit',
+                fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '2px 0', textAlign: 'left' }}>
+              {t('nav.myProfile')}
+            </button>
             <button type="button" onClick={logout}
               style={{ border: 'none', background: 'transparent', color: 'var(--muted)', fontFamily: 'inherit',
                 fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '2px 0', textAlign: 'left' }}>
@@ -1587,7 +1599,14 @@ export default function Club() {
 
         {/* ===================== Zone de contenu ===================== */}
         <main className="cons-main">
-          {err && <div className="error">{err}</div>}
+          {['teams', 'athletes', 'coaches', 'licences'].includes(section) && (
+            <p style={{ margin: '0 0 12px', fontSize: 12.5, lineHeight: 1.5, color: 'var(--muted)' }}>
+              {t('club.lockedA')}{' '}
+              <a href="#" onClick={(e) => { e.preventDefault(); setSection('support'); setErr(''); }}
+                style={{ fontWeight: 700 }}>{t('club.lockedLink')}</a>.
+            </p>
+          )}
+          {err && <div className="error" role="alert">{err}</div>}
           {ok && <div className="pill" style={{ marginBottom: 12 }}>{ok}</div>}
           {current}
         </main>

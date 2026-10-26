@@ -425,6 +425,11 @@ export default function Profil() {
         ))}
       </div>
 
+      <div className="card">
+        <a href="#" onClick={(e) => { e.preventDefault(); router.push('/mes-donnees'); }}
+          style={{ fontWeight: 700, fontSize: 14 }}>{t('mydata.link')} →</a>
+      </div>
+
       <AppVersion />
       <BottomNav role="parent" />
     </div>
