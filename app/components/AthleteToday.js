@@ -176,7 +176,7 @@ export default function AthleteToday({
               compétences validées pendant cette séance-là. */}
           <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 12 }}>
             {attendance === 'present' && (
-              <Chip>{t('athlete.chipPresent', { time: hhmm(attendanceAt, lang) }).trim()}</Chip>
+              <Chip>{t('athlete.chipPresent', { time: hhmm(session?.start_time, lang) }).trim()}</Chip>
             )}
             {attendance === 'late' && <Chip tone="orange">{t('home.late')}</Chip>}
             {attendance === 'absent' && <Chip tone="orange">{t('home.absent')}</Chip>}

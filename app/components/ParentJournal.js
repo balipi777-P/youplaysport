@@ -87,10 +87,12 @@ export default function ParentJournal({
      La table sessions n'a pas de colonne de lieu : rien n'est affiché à sa place. */
   const slot = [hhmm(session?.start_time, lang), hhmm(session?.end_time, lang)].filter(Boolean).join(' – ');
 
-  /* Fil de la séance : seuls les moments réellement horodatés en base y figurent. */
+  /* Fil de la séance : des heures de séance (start_time), jamais des heures de
+     saisie (pointage, publication, validation). Les moments sans heure propre
+     (travaillé, mot du coach, objectif) n'affichent que leur titre. */
   const timeline = [];
   if (attendanceAt && attendance !== 'absent') {
-    timeline.push({ time: hhmm(attendanceAt, lang), title: t('journal.tlArrival') });
+    timeline.push({ time: hhmm(session?.start_time, lang), title: t('journal.tlArrival') });
   }
   if (session?.theme) {
     timeline.push({
@@ -100,15 +102,15 @@ export default function ParentJournal({
   }
   if (sessionSkills.length > 0) {
     timeline.push({
-      time: hhmm(sessionSkills[0].validated_at, lang), title: t('journal.tlWorked'),
+      time: '', title: t('journal.tlWorked'),
       chips: sessionSkills.map((s) => `${s.label} — ${t('journal.validatedSuffix')}`),
     });
   }
   if (mot) {
-    timeline.push({ time: hhmm(mot.created_at, lang), title: t('journal.tlCoach'), quote: mot.body });
+    timeline.push({ time: '', title: t('journal.tlCoach'), quote: mot.body });
   }
   if (objectif) {
-    timeline.push({ time: hhmm(objectif.created_at, lang), title: t('journal.tlGoal'), text: objectif.body });
+    timeline.push({ time: '', title: t('journal.tlGoal'), text: objectif.body });
   }
 
   /* Bloc d'implication : il ne s'affiche que si la présence a été pointée, et ses
