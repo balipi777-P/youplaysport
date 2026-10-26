@@ -677,7 +677,7 @@ export default function Club() {
     .cons-backdrop { display: none; }
     .cons-fold { flex: 1; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
     .cons-grid { display: grid; grid-template-columns: minmax(0, 1.85fr) minmax(0, 1fr); gap: 14px; align-items: start; }
-    .cons-row { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 2fr) 104px 88px; gap: 10px; align-items: center; }
+    .cons-row { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 2fr) 104px 104px; gap: 10px; align-items: center; }
     .cons-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
     .cons-map { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.15fr);
       gap: 8px; align-items: center; }
@@ -708,6 +708,7 @@ export default function Club() {
     @media (max-width: 640px) {
       .cons-row { grid-template-columns: 1fr; gap: 3px; }
       .cons-row.cons-th { display: none; }
+      .cons-att { text-align: left !important; }
       /* Ligne 1 : repère + nom (jamais coupé) + bouton ; ligne 2 : pastille, texte, compteur. */
       .tm-head { flex-wrap: wrap; row-gap: 8px; column-gap: 10px; align-items: flex-start; }
       .tm-name { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
@@ -851,8 +852,9 @@ export default function Club() {
         {withGroup ? (teamById[a.teamId]?.name || '—') : accountText(a)}
       </div>
       <div>{statusChip(a.linked)}</div>
-      <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 700, color: 'var(--brand-dark)' }}>
-        {a.total > 0 ? `${a.presents}/${a.total}` : '—'}
+      <div className="cons-att" style={{ textAlign: 'right', fontSize: 13, fontWeight: 700, color: 'var(--brand-dark)' }}
+        title={a.total > 0 ? t('club.presentTip', { n: a.presents, total: a.total }) : undefined}>
+        {a.total > 0 ? t('club.presentOf', { n: a.presents, total: a.total }) : '—'}
       </div>
       {movePl?.id === a.id && moveBox(a)}
     </div>
