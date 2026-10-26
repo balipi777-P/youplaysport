@@ -21,6 +21,7 @@ import { getStored, KEY_CLUB } from '../../lib/spaces';
 import Icon from '../components/Icon';
 import ClubAvatar from '../components/ClubAvatar';
 import { PendingLinksList } from '../components/PendingLinks';
+import { exportClubCsv } from '../../lib/exports';
 import { useMyName, firstNameOf, initialsOfName } from '../../lib/userName';
 import { BrandingEditor, ClubWelcome, MartialDiscipline, isMartialSport, isHex, darken } from '../components/ClubBranding';
 
@@ -168,6 +169,7 @@ export default function Club() {
   const [coachCount, setCoachCount] = useState(0);
   const [copied, setCopied] = useState(false);
   const [csvNote, setCsvNote] = useState(false);
+  const [exporting, setExporting] = useState('');
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1216,6 +1218,25 @@ export default function Club() {
         {sectionHead('adm.lic.title', headButtons(
           () => { setTeamName(''); document.getElementById('adm-newteam')?.focus(); },
         ))}
+
+        <div className="card">
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{t('exp.clubT')}</div>
+          <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 10 }}>{t('exp.clubD')}</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {['licencies', 'equipes', 'presences'].map((k) => (
+              <button key={k} type="button" className="btn ghost" style={{ width: 'auto', padding: '0 14px', marginBottom: 0 }}
+                disabled={Boolean(exporting) || !clubId}
+                onClick={async () => {
+                  setExporting(k); setErr(''); setOk('');
+                  try { const n = await exportClubCsv(clubId, k, club?.name); setOk(t('exp.done', { n })); }
+                  catch (e) { console.error('[club_export]', e); setErr(t('exp.clubErr')); }
+                  finally { setExporting(''); }
+                }}>
+                {exporting === k ? '…' : t(`exp.${k}`)}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {csvNote && (
           <div className="card" style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.55 }}>{t('adm.importSoon')}</div>
