@@ -183,7 +183,7 @@ export default function ParentJournal({
                 </span>
                 <span style={{ display: 'block', fontSize: 9.5, fontWeight: 800, letterSpacing: '.5px',
                   textTransform: 'uppercase', opacity: .85, marginTop: 2 }}>
-                  {[c.teams?.clubs?.name, sportName(sp)].filter(Boolean).join(' · ')}
+                  {[c.teams?.clubs?.name, c.teams?.name, sportName(sp)].filter(Boolean).join(' · ')}
                 </span>
               </span>
             </button>
