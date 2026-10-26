@@ -49,6 +49,8 @@ export default function Evenements() {
   const [convocations, setConvocations] = useState({}); // {playerId: response|null}
   const [summary, setSummary] = useState(null); // {present, absent, pending} d'event_responses
   const [resending, setResending] = useState(false);
+  const [sel, setSel] = useState(() => new Set()); // joueurs cochés pour un nouvel événement
+  const [adding, setAdding] = useState('');         // id du joueur en cours d'ajout
   const [type, setType] = useState('match');
   const [opponent, setOpponent] = useState('');
   const [place, setPlace] = useState('');
@@ -64,6 +66,8 @@ export default function Evenements() {
   /* Message clair pour les erreurs des RPC de convocation. */
   const rpcMsg = (e) => {
     const m = String(e?.message || '');
+    if (m.includes('no_players')) return t('evt.errNoPlayers');
+    if (m.includes('player_not_in_team')) return t('evt.errNotInTeam');
     const code = ['not_authorized', 'not_convoked', 'event_not_found'].find((c) => m.includes(c));
     return code ? t(`rsvp.err.${code}`) : t('rsvp.err.other');
   };
@@ -107,6 +111,7 @@ export default function Evenements() {
       linked = new Set((pp || []).map((r) => r.player_id));
     }
     setPlayers(list.map((p) => ({ ...p, hasParent: linked.has(p.id) })));
+    setSel(new Set(ids)); // par défaut : tout le groupe est convoqué
 
     const { data: evs } = await withNotes((wn) => supabase.from('events')
       .select(`id, type, datetime, place, opponent, rsvp_deadline${wn ? ', notes' : ''}`)
@@ -183,10 +188,29 @@ export default function Evenements() {
     } finally { setSavingNotes(false); }
   }
 
+  /* Joueur oublié : ajout après publication, sans doublon (fait côté base). */
+  async function addToCallup(pid) {
+    setErr(''); setAdding(pid);
+    try {
+      const { error } = await supabase.rpc('add_event_convocations', { p_event: eventId, p_players: [pid] });
+      if (error) throw error;
+      await loadConvocations(eventId);
+      flash(t('evt.added'));
+    } catch (e) {
+      console.error('[add_event_convocations]', e);
+      setErr(rpcMsg(e));
+    } finally { setAdding(''); }
+  }
+
+  const toggleOne = (id) => setSel((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const allOn = players.length > 0 && sel.size === players.length;
+  const toggleAll = () => setSel(allOn ? new Set() : new Set(players.map((p) => p.id)));
+
   async function send() {
     setErr(''); setBusy(true);
     try {
       if (!teamId) throw new Error(t('evt.errTeam'));
+      if (sel.size === 0) throw new Error(t('evt.errNoPlayers'));
       if (!date || !time) throw new Error(t('evt.errDate'));
       /* La date-limite couvre toute la journée saisie : le parent qui répond
          le soir même n'est pas hors délai. */
@@ -198,12 +222,18 @@ export default function Evenements() {
         /* Envoyé seulement s'il est rempli : un événement sans précision reste
            créable même avant l'application de la migration. */
         ...(notes.trim() ? { p_notes: notes.trim() } : {}),
+        /* Liste envoyée seulement si le groupe n'est pas entier : « tout le
+           groupe » reste l'appel historique (p_players null côté base). */
+        ...(sel.size < players.length ? { p_players: [...sel] } : {}),
       });
       if (error) throw error;
       await loadTeam(teamId);
       if (newId) setEventId(newId);
-      flash(t('evt.sent', { n: players.length }));
-    } catch (e) { setErr(e.message || t('common.error')); } finally { setBusy(false); }
+      flash(t('evt.sent', { n: sel.size }));
+    } catch (e) {
+      const m = String(e?.message || '');
+      setErr(m.includes('no_players') || m.includes('player_not_in_team') ? rpcMsg(e) : (m || t('common.error')));
+    } finally { setBusy(false); }
   }
 
   if (!ready) return <div className="wrap"><p style={{ color: 'var(--muted)' }}>{t('common.loading')}</p></div>;
@@ -348,7 +378,7 @@ export default function Evenements() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
               <span className="label" style={{ marginBottom: 0 }}>{t('evt.callups')}</span>
-              {players.length > 0 && (
+              {players.length > 0 && locked && (
                 <span style={{ flex: '0 0 auto', fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>
                   <span style={{ color: STATUS.present.ink }}>{t('evt.recapPresent', { n: count('present') })}</span>
                   {' · '}
@@ -363,7 +393,21 @@ export default function Evenements() {
               <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 8 }}>{t('evt.noPlayers')}</div>
             )}
 
+            {!locked && players.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                gap: 10, margin: '8px 0 4px', flexWrap: 'wrap' }}>
+                <button type="button" className="btn ghost"
+                  style={{ width: 'auto', padding: '0 14px', marginBottom: 0 }} onClick={toggleAll}>
+                  {allOn ? t('evt.deselectAll') : t('evt.allPlayers')}
+                </button>
+                <span aria-live="polite" style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--muted)' }}>
+                  {t('evt.selectedCount', { n: sel.size, total: players.length })}
+                </span>
+              </div>
+            )}
+
             {players.map((p, i) => {
+              const invited = Object.prototype.hasOwnProperty.call(convocations, p.id);
               const st = STATUS[answered(p)];
               return (
                 <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0',
@@ -383,10 +427,22 @@ export default function Evenements() {
                       {whoAnswers(p)}
                     </span>
                   </span>
-                  <span style={{ flex: '0 0 auto', background: st.bg, color: st.ink, borderRadius: 999,
-                    padding: '5px 11px', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>
-                    {t(st.key)}
-                  </span>
+                  {!locked ? (
+                    <input type="checkbox" checked={sel.has(p.id)} onChange={() => toggleOne(p.id)}
+                      aria-label={`${p.first_name} ${p.last_name || ''}`}
+                      style={{ flex: '0 0 auto', width: 22, height: 22, accentColor: 'var(--brand-dark)' }} />
+                  ) : invited ? (
+                    <span style={{ flex: '0 0 auto', background: st.bg, color: st.ink, borderRadius: 999,
+                      padding: '5px 11px', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                      {t(st.key)}
+                    </span>
+                  ) : (
+                    <button type="button" className="btn ghost" disabled={adding === p.id}
+                      style={{ flex: '0 0 auto', width: 'auto', padding: '0 12px', marginBottom: 0, fontSize: 12 }}
+                      onClick={() => addToCallup(p.id)}>
+                      {adding === p.id ? '…' : t('evt.addToCallup')}
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -410,7 +466,7 @@ export default function Evenements() {
               </button>
             </>
           ) : (
-            <button className="btn" disabled={busy || players.length === 0} onClick={send}
+            <button className="btn" disabled={busy || players.length === 0 || sel.size === 0} onClick={send}
               style={{ padding: 16, fontSize: 16, borderRadius: 16,
                 boxShadow: '0 8px 20px rgba(192,91,68,.28)' }}>
               {busy ? t('evt.sending') : t('evt.send')}
