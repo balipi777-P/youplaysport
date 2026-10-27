@@ -2,7 +2,8 @@
 
 import { useT } from '../../lib/i18n';
 import CoachNextEvent from './CoachNextEvent';
-import { firstNameOf, initialsOfName } from '../../lib/userName';
+import AccountHeader from './AccountHeader';
+import { firstNameOf } from '../../lib/userName';
 
 /* Onglet « Groupes » du coach — l'accueil de son espace. Composant purement
    présentatif : l'accueil reste seul à parler à Supabase et passe tout en props.
@@ -50,13 +51,12 @@ function Chip({ children }) {
 }
 
 export default function CoachGroups({
-  todayLabel, coachName, roleLine, todaySession, teams, showClub,
+  todayLabel, coachName, headClub, showAccountHeader, onProfile, onLogout, todaySession, teams, showClub,
   joinCode, nextEvent, onOpenEvent, onOpenSession, onNewSession, onNewEvent, onPresence, onSkills, onManageClub,
 }) {
   const { t, lang } = useT();
 
   const name = coachName ? t('hello.name', { name: firstNameOf(coachName) }) : t('coach.fallbackName');
-  const initials = initialsOfName(coachName) || 'C';
 
   /* Horaire de la séance du jour. La table sessions n'a pas de colonne de lieu :
      la ligne se limite à la date et à l'horaire. */
@@ -73,24 +73,14 @@ export default function CoachGroups({
 
   return (
     <>
-      {/* ---- En-tête : le rôle, le nom, l'avatar ---- */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ color: 'var(--muted)', fontSize: 10.5, fontWeight: 800, letterSpacing: '.9px' }}>
-            {todayLabel}
-          </div>
-          <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.4px', margin: '3px 0 4px',
-            wordBreak: 'break-word' }}>
-            {name}
-          </h1>
-          <div style={{ fontSize: 12.5, color: 'var(--muted)', fontWeight: 600 }}>{roleLine || t('coach.eyebrow')}</div>
-        </div>
-        <span className="q" aria-hidden="true" style={{ flex: '0 0 44px', width: 44, height: 44,
-          borderRadius: 15, background: 'var(--peach)', color: 'var(--brand-dark)', display: 'flex',
-          alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800 }}>
-          {initials}
-        </span>
-      </div>
+      {showAccountHeader && (
+        <AccountHeader headClub={headClub} userName={coachName} onProfile={onProfile} onLogout={onLogout} />
+      )}
+      {/* ---- Date en petit, puis le nom ---- */}
+      <div style={{ color: 'var(--muted)', fontSize: 10.5, fontWeight: 800, letterSpacing: '.9px' }}>{todayLabel}</div>
+      <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.4px', margin: '3px 0 16px', wordBreak: 'break-word' }}>
+        {name}
+      </h1>
 
       {/* ---- Séance du jour. Lisible avant publication : la RLS de sessions
              n'ouvre que sur l'équipe. ---- */}

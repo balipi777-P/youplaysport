@@ -416,7 +416,7 @@ export default function Home() {
   return (
     <div className="wrap" style={{ paddingBottom: BOTTOM_NAV_HEIGHT + 24 }}>
       <PilotBanner compact style={{ marginTop: 4 }} />
-      {!(player && !isAthlete) && (
+      {!(player && !isAthlete) && !(staff && !player) && (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
         {headClub ? (
           /* Le club en évidence ; YouPlaySport reste en filigrane. */
@@ -516,7 +516,11 @@ export default function Home() {
           <PendingLinks />
           <CoachGroups
             todayLabel={todayLabel}
-            coachName={userName} roleLine={roleLine}
+            coachName={userName}
+            headClub={headClub}
+            showAccountHeader={!player}
+            onProfile={() => router.push('/mes-donnees')}
+            onLogout={logout}
             todaySession={staffSession}
             nextEvent={coachTeams.length ? staffEvents.find((e) => coachTeams.some((tm) => tm.id === e.team_id)) || null : null}
             onOpenEvent={(e) => router.push(`/evenements?team=${e.team_id}&event=${e.id}`)}
