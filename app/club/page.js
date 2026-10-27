@@ -30,6 +30,7 @@ import { BrandingEditor, ClubWelcome, MartialDiscipline, isMartialSport, isHex, 
 const NAV = [
   { key: 'teams', icon: 'groups' },
   { key: 'athletes', icon: 'user' },
+  { key: 'parents', icon: 'family' },
   { key: 'coaches', icon: 'events' },
   { key: 'licences', icon: 'folder' },
   { key: 'seasons', icon: 'calendar' },
@@ -186,6 +187,15 @@ export default function Club() {
   const [documents, setDocuments] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [pendings, setPendings] = useState([]);
+  const [parentsRaw, setParentsRaw] = useState(null);   // section Parents : {players[], rels[]} ; null = à charger
+  const [parentsFailed, setParentsFailed] = useState(false);
+  const [parentQuery, setParentQuery] = useState('');
+  const [parentFilter, setParentFilter] = useState('all'); // all | pending | orphans
+  const [parentAsk, setParentAsk] = useState(null);       // {linkId, kind: 'reject' | 'detach'}
+  const [parentBusy, setParentBusy] = useState('');
+  const [orphanMail, setOrphanMail] = useState({});       // {playerId: email saisi}
+  const [formChild, setFormChild] = useState('');
+  const [formMail, setFormMail] = useState('');
   const [linkBusy, setLinkBusy] = useState(''); // link_id en cours de décision
   const [csv, setCsv] = useState(null);   // {name, rows} du fichier déposé
   const [dragging, setDragging] = useState(false);
@@ -230,6 +240,43 @@ export default function Club() {
     const { data, error } = await supabase.schema('yps').rpc('pending_links_for_admin');
     if (error) { console.error('pending_links_for_admin', error); return; }
     setPendings(data || []);
+  }, []);
+
+  /**
+   * Parents du club : rattachements (avec leur id, lisible par le dirigeant via
+   * player_parents) + nom / email masqué fournis par parents_for_admin.
+   */
+  const loadParentsData = useCallback(async (cid) => {
+    if (!cid) return;
+    try {
+      const { data: plRows, error: plErr } = await supabase.from('players')
+        .select('id, first_name, last_name, team_id').eq('club_id', cid).order('first_name');
+      if (plErr) throw plErr;
+      const roster = plRows || [];
+      const { data: lk, error: lkErr } = await supabase.schema('yps').rpc('parents_for_admin', { p_club: cid });
+      if (lkErr) throw lkErr;
+      const idRows = [];
+      for (let from = 0; from < roster.length; from += 100) {
+        const slice = roster.slice(from, from + 100).map((pl) => pl.id);
+        const { data: part, error: partErr } = await supabase.from('player_parents')
+          .select('id, player_id, parent_user_id').in('player_id', slice);
+        if (partErr) throw partErr;
+        idRows.push(...(part || []));
+      }
+      const linkIdOf = {};
+      for (const row of idRows) linkIdOf[`${row.player_id}|${row.parent_user_id}`] = row.id;
+      const rels = (lk || []).map((l) => ({
+        linkId: linkIdOf[`${l.player_id}|${l.parent_user_id}`] || '',
+        playerId: l.player_id, uid: l.parent_user_id, status: l.status || 'active',
+        fullName: l.full_name || '', mail: l.email_masked || '',
+      })).filter((r) => r.linkId);
+      setParentsRaw({ players: roster, rels });
+      setParentsFailed(false);
+    } catch (e) {
+      console.error('loadParentsData', e);
+      setParentsFailed(true);
+      setParentsRaw((cur) => cur || { players: [], rels: [] });
+    }
   }, []);
 
   /** Coachs entrés avec le code du club mais sans équipe : ils n'ont pas encore d'espace. */
@@ -491,6 +538,12 @@ export default function Club() {
     loadTeamDetail(teamId);
   }, [section, teamId, details, loadTeamDetail]);
 
+  /* Les parents se chargent dès que le club est connu (le compteur du menu en dépend). */
+  useEffect(() => {
+    if (!clubId || parentsRaw !== null) return;
+    loadParentsData(clubId);
+  }, [clubId, parentsRaw, loadParentsData]);
+
   /* La section Athlètes agrège tous les groupes, chargée à sa première ouverture. */
   useEffect(() => {
     if (section !== 'athletes' || everyone !== null) return;
@@ -683,6 +736,50 @@ export default function Club() {
     } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
   }
 
+
+  /* ---------- onglet Parents : actions ---------- */
+
+  function parentError(e) {
+    const m = `${(e && e.message) || ''}`;
+    if (m.includes('Aucun compte')) return t('par.errNoAccount');
+    if (m.includes('non autorisé') || m.includes('not_admin')) return t('par.errNotAllowed');
+    return t('par.errGeneric');
+  }
+
+  async function parentDecide(linkId, approve) {
+    setParentAsk(null);
+    await decideLink(linkId, approve);
+    setParentsRaw(null);
+  }
+
+  async function parentDetach(linkId) {
+    setErr(''); setParentBusy(linkId);
+    try {
+      const { data, error } = await supabase.from('player_parents').delete().eq('id', linkId).select('id');
+      if (error) throw error;
+      if (!data || data.length === 0) setErr(t('par.errDetachNone')); else flash(t('par.detached'));
+      setEveryone(null);
+    } catch (e) { setErr(parentError(e)); } finally {
+      setParentBusy(''); setParentAsk(null); setParentsRaw(null);
+    }
+  }
+
+  async function parentLink(playerId, rawMail) {
+    setErr('');
+    const mail = (rawMail || '').trim();
+    if (!playerId) { setErr(t('par.errChild')); return false; }
+    if (!mail) { setErr(t('club.errParentEmail')); return false; }
+    setParentBusy(playerId);
+    try {
+      const { error } = await supabase.rpc('admin_link_parent_by_email', { p_player: playerId, p_email: mail });
+      if (error) throw error;
+      flash(t('club.parentLinked'));
+      setEveryone(null);
+      setParentsRaw(null);
+      return true;
+    } catch (e) { setErr(parentError(e)); return false; } finally { setParentBusy(''); }
+  }
+
   /**
    * Lit un CSV déposé pour n'en garder que le nom et le nombre de lignes de
    * données. Tout se passe dans le navigateur : le fichier n'est pas envoyé et
@@ -805,6 +902,7 @@ export default function Club() {
   const counts = {
     teams: teams.length,
     athletes: memberCount,
+    parents: parentsRaw ? new Set(parentsRaw.rels.filter((r) => r.status !== 'rejected').map((r) => r.uid)).size : null,
     coaches: coachCount,
     licences: memberCount,
     seasons: seasons.length,
@@ -1124,6 +1222,7 @@ export default function Club() {
     }
     setPendings((list) => list.filter((p) => p.link_id !== linkId));
     setEveryone(null);
+    setParentsRaw(null);
     flash(t(approve ? 'adm.lic.linkValidated' : 'adm.lic.linkRejected'));
   }
 
@@ -1418,6 +1517,203 @@ export default function Club() {
             </>
           )}
         </div>
+      </>
+    );
+  }
+
+
+  function ParentsSection() {
+    const fold = (x) => `${x || ''}`.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const rawRels = parentsRaw ? parentsRaw.rels : [];
+    const rawKids = parentsRaw ? parentsRaw.players : [];
+    const kidName = (pl) => `${pl.first_name || ''} ${pl.last_name || ''}`.trim();
+    const kidById = {};
+    for (const pl of rawKids) kidById[pl.id] = pl;
+    const teamLabelOf = (tid) => (teams.find((tm) => tm.id === tid) || {}).name || t('par.noTeam');
+
+    const byParent = {};
+    for (const r of rawRels) {
+      const slot = byParent[r.uid] || (byParent[r.uid] = {
+        uid: r.uid, label: r.fullName || r.mail || t('par.unknown'), mail: r.mail, kids: [] });
+      const pl = kidById[r.playerId];
+      slot.kids.push({ linkId: r.linkId, playerId: r.playerId, status: r.status,
+        childLabel: pl ? kidName(pl) : '—', teamLabel: pl ? teamLabelOf(pl.team_id) : '' });
+    }
+    const allParents = Object.values(byParent).sort((a, b) =>
+      (b.kids.filter((k) => k.status === 'pending').length - a.kids.filter((k) => k.status === 'pending').length)
+      || a.label.localeCompare(b.label));
+    const withLink = new Set(rawRels.filter((r) => r.status !== 'rejected').map((r) => r.playerId));
+    const allOrphans = rawKids.filter((pl) => !withLink.has(pl.id));
+    const pendingParents = allParents.filter((pr) => pr.kids.some((k) => k.status === 'pending'));
+    const activeParents = allParents.filter((pr) => pr.kids.some((k) => k.status !== 'rejected'));
+
+    const needle = fold(parentQuery.trim());
+    const parentHit = (pr) => !needle || fold(pr.label).includes(needle) || fold(pr.mail).includes(needle)
+      || pr.kids.some((k) => fold(k.childLabel).includes(needle));
+    const shownParents = (parentFilter === 'pending' ? pendingParents : allParents).filter(parentHit);
+    const shownOrphans = allOrphans.filter((pl) => !needle || fold(kidName(pl)).includes(needle));
+    const showOrphanBlock = parentFilter !== 'pending' && allOrphans.length > 0;
+    const showParentBlock = parentFilter !== 'orphans';
+
+    const chipTone = {
+      active: { bg: '#E6F4EA', ink: '#1E7B34', key: 'par.stActive' },
+      pending: { bg: '#FFF1E3', ink: '#9A5B18', key: 'par.stPending' },
+      rejected: { bg: '#EEE9E4', ink: '#6B6357', key: 'par.stRejected' },
+    };
+    const smallBtn = { width: 'auto', padding: '7px 12px', fontSize: 12.5 };
+    const filterBtn = (key, label) => (
+      <button key={key} type="button" aria-pressed={parentFilter === key}
+        onClick={() => setParentFilter(key)}
+        style={{ border: parentFilter === key ? '1.5px solid var(--brand)' : '1.5px solid var(--border)',
+          background: parentFilter === key ? 'var(--peach)' : '#fff', color: 'var(--ink)', borderRadius: 20,
+          padding: '7px 13px', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+        {label}
+      </button>
+    );
+
+    const kidLine = (pr, k) => {
+      const tone = chipTone[k.status] || chipTone.active;
+      const asking = parentAsk && parentAsk.linkId === k.linkId ? parentAsk.kind : '';
+      const wait = parentBusy === k.linkId || linkBusy === k.linkId;
+      return (
+        <div key={k.linkId} style={{ borderTop: '1px solid var(--border)', padding: '9px 0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 150px', minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, overflowWrap: 'anywhere' }}>{k.childLabel}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', overflowWrap: 'anywhere' }}>{k.teamLabel}</div>
+            </div>
+            <span style={{ borderRadius: 20, padding: '4px 10px', fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap',
+              background: tone.bg, color: tone.ink }}>{t(tone.key)}</span>
+          </div>
+          {!asking && (
+            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 8 }}>
+              {k.status === 'pending' && (
+                <>
+                  <button type="button" className="btn" disabled={wait} style={smallBtn}
+                    onClick={() => parentDecide(k.linkId, true)}>{t('par.validate')}</button>
+                  <button type="button" className="btn ghost" disabled={wait} style={smallBtn}
+                    onClick={() => setParentAsk({ linkId: k.linkId, kind: 'reject' })}>{t('par.reject')}</button>
+                </>
+              )}
+              {k.status !== 'pending' && (
+                <button type="button" className="btn ghost" disabled={wait} style={smallBtn}
+                  onClick={() => setParentAsk({ linkId: k.linkId, kind: 'detach' })}>{t('par.detach')}</button>
+              )}
+            </div>
+          )}
+          {asking && (
+            <div style={{ marginTop: 8, background: '#FFF6E9', border: '1px solid #F6E4C4', borderRadius: 12, padding: 10 }}>
+              <div style={{ fontSize: 12.5, lineHeight: 1.5, color: '#7A5A18', overflowWrap: 'anywhere' }}>
+                {t(asking === 'reject' ? 'par.rejectAsk' : 'par.detachAsk', { parent: pr.label, child: k.childLabel })}
+              </div>
+              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 8 }}>
+                <button type="button" className="btn" disabled={wait} style={smallBtn}
+                  onClick={() => (asking === 'reject' ? parentDecide(k.linkId, false) : parentDetach(k.linkId))}>
+                  {t(asking === 'reject' ? 'par.rejectYes' : 'par.detachYes')}
+                </button>
+                <button type="button" className="btn ghost" disabled={wait} style={smallBtn}
+                  onClick={() => setParentAsk(null)}>{t('par.cancel')}</button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const parentCard = (pr) => (
+      <div key={pr.uid} style={{ border: '1px solid var(--border)', borderRadius: 16, padding: '12px 14px', background: '#fff' }}>
+        <div style={{ fontSize: 14.5, fontWeight: 700, overflowWrap: 'anywhere' }}>{pr.label}</div>
+        {pr.mail && pr.mail !== pr.label && (
+          <div style={{ fontSize: 12, color: 'var(--muted)', overflowWrap: 'anywhere' }}>{pr.mail}</div>
+        )}
+        <div style={{ marginTop: 6 }}>{pr.kids.map((k) => kidLine(pr, k))}</div>
+      </div>
+    );
+
+    const orphanRow = (pl) => {
+      const wait = parentBusy === pl.id;
+      return (
+        <div key={pl.id} style={{ border: '1px solid var(--border)', borderRadius: 16, padding: '12px 14px', background: '#fff' }}>
+          <div style={{ fontSize: 14, fontWeight: 700, overflowWrap: 'anywhere' }}>{kidName(pl)}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>{teamLabelOf(pl.team_id)}</div>
+          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+            <input className="input" type="email" style={{ marginBottom: 0, flex: '1 1 180px', minWidth: 0 }}
+              value={orphanMail[pl.id] || ''} placeholder={t('par.linkEmail')}
+              onChange={(e) => setOrphanMail((m) => ({ ...m, [pl.id]: e.target.value }))} />
+            <button type="button" className="btn" disabled={wait} style={smallBtn}
+              onClick={async () => { if (await parentLink(pl.id, orphanMail[pl.id])) setOrphanMail((m) => ({ ...m, [pl.id]: '' })); }}>
+              {wait ? '…' : t('par.link')}
+            </button>
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <>
+        {sectionHead('adm.nav.parents')}
+        {parentsRaw === null && <div className="card" style={{ fontSize: 13, color: 'var(--muted)' }}>{t('common.loading')}</div>}
+        {parentsRaw !== null && (
+          <div style={{ display: 'grid', gap: 14 }}>
+            {parentsFailed && <div className="error">{t('par.errLoad')}</div>}
+
+            <div className="card" style={{ marginBottom: 0 }}>
+              <input className="input" value={parentQuery} placeholder={t('par.search')}
+                onChange={(e) => setParentQuery(e.target.value)} />
+              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                {filterBtn('all', t('par.fAll'))}
+                {filterBtn('pending', t('par.fPending', { n: pendingParents.length }))}
+                {filterBtn('orphans', t('par.fOrphans', { n: allOrphans.length }))}
+              </div>
+            </div>
+
+            {showOrphanBlock && (
+              <div className="card" style={{ marginBottom: 0 }}>
+                {foldHead('par:orph', t('par.orphansN', { n: allOrphans.length }), !!folded['par:orph'])}
+                {!folded['par:orph'] && (
+                  <>
+                    <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 10 }}>{t('par.orphansHint')}</div>
+                    <div style={{ display: 'grid', gap: 10 }}>{shownOrphans.map(orphanRow)}</div>
+                    {shownOrphans.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('par.noMatch')}</div>}
+                  </>
+                )}
+              </div>
+            )}
+            {parentFilter === 'orphans' && allOrphans.length === 0 && (
+              <div className="card" style={{ marginBottom: 0, fontSize: 13, color: 'var(--muted)' }}>{t('par.noOrphans')}</div>
+            )}
+
+            {showParentBlock && (
+              <div className="card" style={{ marginBottom: 0 }}>
+                {foldHead('par:list', t('par.listN', { n: activeParents.length }), !!folded['par:list'])}
+                {!folded['par:list'] && (
+                  <>
+                    {allParents.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.55 }}>{t('par.empty')}</div>}
+                    {allParents.length > 0 && shownParents.length === 0 && (
+                      <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t(parentFilter === 'pending' && !needle ? 'par.noPending' : 'par.noMatch')}</div>
+                    )}
+                    <div style={{ display: 'grid', gap: 10 }}>{shownParents.map(parentCard)}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 10 }}>{t('par.emailMasked')}</div>
+                  </>
+                )}
+              </div>
+            )}
+
+            <div className="card" style={{ marginBottom: 0 }}>
+              <div className="label" style={{ marginBottom: 8 }}>{t('par.linkTitle')}</div>
+              <select className="input" value={formChild} onChange={(e) => setFormChild(e.target.value)}>
+                <option value="">{t('par.linkChild')}</option>
+                {rawKids.map((pl) => <option key={pl.id} value={pl.id}>{kidName(pl)} · {teamLabelOf(pl.team_id)}</option>)}
+              </select>
+              <input className="input" type="email" value={formMail} placeholder={t('par.linkEmail')}
+                onChange={(e) => setFormMail(e.target.value)} />
+              <button type="button" className="btn" disabled={parentBusy === formChild && !!formChild}
+                onClick={async () => { if (await parentLink(formChild, formMail)) { setFormMail(''); } }}>
+                {t('par.link')}
+              </button>
+            </div>
+          </div>
+        )}
       </>
     );
   }
@@ -1721,6 +2017,7 @@ export default function Club() {
   const SECTIONS = {
     teams: TeamsSection,
     athletes: AthletesSection,
+    parents: ParentsSection,
     coaches: CoachesSection,
     licences: LicencesSection,
     seasons: SeasonsSection,

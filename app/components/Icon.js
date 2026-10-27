@@ -14,6 +14,7 @@ const PATHS = {
   folder: ['M3.5 7.5c0-1.1.9-2 2-2h4l2 2.5h7c1.1 0 2 .9 2 2v7.5c0 1.1-.9 2-2 2h-13c-1.1 0-2-.9-2-2V7.5z'],
   file: ['M6.5 3.5h7l4.5 4.5v11c0 .8-.7 1.5-1.5 1.5h-10c-.8 0-1.5-.7-1.5-1.5v-14c0-.8.7-1.5 1.5-1.5z', 'M13.5 3.5V8H18', 'M9 13h6', 'M9 16.5h4'],
   palette: ['M12 3.5a8.5 8.5 0 1 0 0 17c1.2 0 1.8-.9 1.5-1.9-.3-1 .3-2 1.4-2H17a3.5 3.5 0 0 0 3.5-3.5C20.5 7 16.7 3.5 12 3.5z'],
+  family: ['M3.5 20c0-3 2.4-5.4 5.5-5.4s5.5 2.4 5.5 5.4', 'M15.5 20c0-1.9 1.1-3.4 2.6-3.4s2.4 1.5 2.4 3.4'],
   chat: ['M5 5.5h14c.8 0 1.5.7 1.5 1.5v8.5c0 .8-.7 1.5-1.5 1.5H10l-4.5 3.5V17H5c-.8 0-1.5-.7-1.5-1.5V7c0-.8.7-1.5 1.5-1.5z'],
 };
 /* Formes pleines en plus des tracés (cercles, rectangles). */
@@ -21,6 +22,7 @@ const SHAPES = {
   user: <circle cx="12" cy="8" r="3.5" />,
   calendar: <rect x="4" y="5.5" width="16" height="14.5" rx="2.5" />,
   groups: (<><circle cx="9" cy="8.5" r="3" /><circle cx="17" cy="9.5" r="2.3" /></>),
+  family: (<><circle cx="9" cy="8" r="3.2" /><circle cx="17.6" cy="12.4" r="2" /></>),
 };
 
 export default function Icon({ name, size = 20, strokeWidth = 1.5, style }) {
