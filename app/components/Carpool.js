@@ -31,8 +31,10 @@ export function carpoolErrKey(e) {
 export function ParentCarpool({ eventId, refreshKey }) {
   const { t } = useT();
   const [sum, setSum] = useState(null);       // null = rien à afficher
+  const [draft, setDraft] = useState('');     // choix sélectionné, pas encore forcément enregistré
   const [seats, setSeats] = useState(1);
   const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [err, setErr] = useState('');
 
   const load = useCallback(async () => {
@@ -40,26 +42,33 @@ export function ParentCarpool({ eventId, refreshKey }) {
     const { data, error } = await sb().rpc('carpool_summary', { p_event: eventId });
     if (error || !data || !data.enabled || data.excluded) { setSum(null); return; }
     setSum(data);
-    if (data.mine?.choice === 'drive' && data.mine.seats) setSeats(data.mine.seats);
+    /* Réouverture : le choix déjà enregistré est présélectionné (un ancien « self » vaut « pas de place »). */
+    const m = data.mine;
+    if (m?.choice) {
+      setDraft(m.choice === 'self' ? 'unavailable' : m.choice);
+      if (m.choice === 'drive' && m.seats) setSeats(m.seats);
+    }
   }, [eventId]);
 
   useEffect(() => { load(); }, [load, refreshKey]);
 
-  async function save(choice, n) {
+  function pick(c) { setDraft(c); setSaved(false); setErr(''); }
+
+  async function save() {
+    if (!draft) return;
     setErr(''); setBusy(true);
     const { error } = await sb().rpc('set_carpool_choice',
-      { p_event: eventId, p_choice: choice, p_seats: choice === 'drive' ? n : null });
+      { p_event: eventId, p_choice: draft, p_seats: draft === 'drive' ? seats : null });
     setBusy(false);
     if (error) { console.error('[set_carpool_choice]', error.message); setErr(t(carpoolErrKey(error))); return; }
     await load();
+    setSaved(true);
   }
 
   if (!sum) return null;
   const mine = sum.mine || null;
-  /* Un ancien choix « self » s'affiche comme « pas de place disponible ». */
   const cur = mine?.choice === 'self' ? 'unavailable' : (mine?.choice || '');
   const driveLabel = (n) => t(n > 1 ? 'carpool.driveMany' : 'carpool.driveOne', { n });
-  const driveOn = cur === 'drive' && mine?.seats === seats;
   const step = { width: 44, height: 44, flex: '0 0 44px', borderRadius: 12, border: '1px solid var(--border)', background: '#fff',
     fontSize: 20, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--ink)', padding: 0 };
 
@@ -73,23 +82,28 @@ export function ParentCarpool({ eventId, refreshKey }) {
       <div role="group" aria-label={t('carpool.title')} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <button type="button" style={step} disabled={busy || seats <= 1} aria-label={t('carpool.minus')}
-            onClick={() => setSeats((n) => Math.max(1, n - 1))}>−</button>
-          <button type="button" aria-pressed={driveOn} disabled={busy}
-            className={driveOn ? 'btn' : 'btn ghost'} style={{ ...TAP, flex: 1, minWidth: 0, marginBottom: 0, padding: '0 8px' }}
-            onClick={() => save('drive', seats)}>
+            onClick={() => { setSeats((n) => Math.max(1, n - 1)); pick('drive'); }}>−</button>
+          <button type="button" aria-pressed={draft === 'drive'} disabled={busy}
+            className={draft === 'drive' ? 'btn' : 'btn ghost'} style={{ ...TAP, flex: 1, minWidth: 0, marginBottom: 0, padding: '0 8px' }}
+            onClick={() => pick('drive')}>
             {driveLabel(seats)}
           </button>
           <button type="button" style={step} disabled={busy || seats >= 8} aria-label={t('carpool.plus')}
-            onClick={() => setSeats((n) => Math.min(8, n + 1))}>+</button>
+            onClick={() => { setSeats((n) => Math.min(8, n + 1)); pick('drive'); }}>+</button>
         </div>
         {['unavailable', 'need'].map((c) => (
-          <button key={c} type="button" aria-pressed={cur === c} disabled={busy}
-            className={cur === c ? 'btn' : 'btn ghost'} style={{ ...TAP, marginBottom: 0 }}
-            onClick={() => save(c)}>
+          <button key={c} type="button" aria-pressed={draft === c} disabled={busy}
+            className={draft === c ? 'btn' : 'btn ghost'} style={{ ...TAP, marginBottom: 0 }}
+            onClick={() => pick(c)}>
             {t(`carpool.${c}`)}
           </button>
         ))}
       </div>
+      <button type="button" className="btn" disabled={busy || !draft} onClick={save}
+        style={{ ...TAP, marginTop: 12, marginBottom: 0 }}>
+        {busy ? '…' : t('carpool.confirm')}
+      </button>
+      {saved && !err && <div className="pill" role="status" style={{ marginTop: 10 }}>✓ {t('carpool.saved')}</div>}
       {err && <div className="error" role="alert" style={{ marginTop: 10 }}>{err}</div>}
     </Fold>
   );
