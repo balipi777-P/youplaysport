@@ -8,6 +8,7 @@ import { clearSpaceStorage } from '../../lib/spaces';
 import { exportChildData } from '../../lib/exports';
 import { loadMyChildren } from '../../lib/children';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
+import ContactClub from '../components/ContactClub';
 
 const DANGER = '#C0392B';
 
@@ -189,6 +190,8 @@ export default function MesDonnees() {
           ))}
         </div>
       )}
+
+      <ContactClub />
 
       <div className="card">
         <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>{t('mydata.exportT')}</div>

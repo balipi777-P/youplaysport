@@ -22,6 +22,8 @@ import Icon from '../components/Icon';
 import ClubAvatar from '../components/ClubAvatar';
 import { PendingLinksList } from '../components/PendingLinks';
 import { exportClubCsv } from '../../lib/exports';
+import { readImport, fold } from '../../lib/csvImport';
+import { requestError, requestStatus, MAX_BODY } from '../../lib/clubRequests';
 import { useMyName, firstNameOf, initialsOfName } from '../../lib/userName';
 import { BrandingEditor, ClubWelcome, MartialDiscipline, isMartialSport, isHex, darken } from '../components/ClubBranding';
 
@@ -32,6 +34,7 @@ const NAV = [
   { key: 'athletes', icon: 'user' },
   { key: 'parents', icon: 'family' },
   { key: 'coaches', icon: 'events' },
+  { key: 'messages', icon: 'chat' },
   { key: 'licences', icon: 'folder' },
   { key: 'seasons', icon: 'calendar' },
   { key: 'documents', icon: 'file' },
@@ -86,18 +89,23 @@ function accountLabel(u) {
 const CSV_COLUMNS = [
   { col: 'nom', field: 'adm.lic.colLast', sample: 'Reynaud' },
   { col: 'prenom', field: 'adm.lic.colFirst', sample: 'Camille' },
-  { col: 'date_naissance', field: 'adm.lic.colBirth', sample: '14/03/2016' },
-  { col: 'email_parent', field: 'adm.lic.colParent', sample: 'h.reynaud@email.fr' },
-  { col: 'groupe', field: 'adm.lic.colGroup', sample: 'U11 Football' },
+  { col: 'date_naissance', field: 'adm.lic.colBirth', sample: '2016-03-14' },
+  { col: 'email_parent_1', field: 'adm.lic.colParent1', sample: 'h.reynaud@email.fr' },
+  { col: 'email_parent_2', field: 'adm.lic.colParent2', sample: 'm.reynaud@email.fr' },
+  { col: 'groupe', field: 'adm.lic.colGroup', sample: '' },
 ];
 
+/** Groupes d'exemple : toujours ceux du sport du club (un club = un seul sport), jamais deux sports mêlés. */
+const sampleGroups = (sport) => [`U11 ${sport || ''}`.trim(), `U14 ${sport || ''}`.trim()];
+
 /** Génère et télécharge le CSV d'exemple (UTF-8 avec BOM pour Excel), côté client. */
-function downloadCsvTemplate() {
+function downloadCsvTemplate(sport) {
+  const [g1, g2] = sampleGroups(sport);
   const head = CSV_COLUMNS.map((c) => c.col).join(',');
   const rows = [
-    CSV_COLUMNS.map((c) => c.sample).join(','),
-    'Martin,Léa,02/09/2015,s.martin@email.fr,U11 Football',
-    'Bernard,Hugo,21/06/2012,c.bernard@email.fr,U14 Basket',
+    `Reynaud,Camille,2016-03-14,h.reynaud@email.fr,m.reynaud@email.fr,${g1}`,
+    `Martin,Léa,2015-09-02,s.martin@email.fr,,${g1}`,
+    `Bernard,Hugo,2012-06-21,c.bernard@email.fr,,${g2}`,
   ];
   const blob = new Blob(['\ufeff' + [head, ...rows].join('\n') + '\n'], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -107,38 +115,9 @@ function downloadCsvTemplate() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/**
- * Nombre de lignes de données d'un CSV : on retire l'en-tête et les lignes
- * vides. Purement local — le fichier n'est jamais envoyé, l'import n'est pas
- * encore câblé, mais le compteur du bouton reste un vrai compteur.
- */
-function countCsvRows(text) {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
-  return Math.max(0, lines.length - 1);
-}
-
 /** Noms (fr/en, sans casse ni accents) sous lesquels le sport du club peut apparaître dans un CSV. */
 function sportLabels(sp) {
-  const fold = (x) => `${x || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
   return sp ? [fold(sp.name_fr), fold(sp.name_en)].filter(Boolean) : [];
-}
-
-/**
- * Lignes d'un CSV dont la colonne « sport » (si elle existe) désigne un autre sport
- * que celui du club. Une cellule vide n'est pas un autre sport.
- */
-function countOtherSportRows(text, labels) {
-  const fold = (x) => `${x || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-  const lines = text.replace(/^\ufeff/, '').split(/\r?\n/).filter((l) => l.trim() !== '');
-  if (lines.length < 2 || !labels.length) return 0;
-  const sep = lines[0].includes(';') && !lines[0].includes(',') ? ';' : ',';
-  const head = lines[0].split(sep).map(fold);
-  const at = head.indexOf('sport');
-  if (at < 0) return 0;
-  return lines.slice(1).filter((ln) => {
-    const cell = fold((ln.split(sep)[at] || '').replace(/^"|"$/g, ''));
-    return cell !== '' && !labels.includes(cell);
-  }).length;
 }
 
 /** Jours pleins entre aujourd'hui et une date, jamais négatif. */
@@ -206,7 +185,14 @@ export default function Club() {
   const [memberCount, setMemberCount] = useState(0);
   const [coachCount, setCoachCount] = useState(0);
   const [copied, setCopied] = useState(false);
-  const [csvNote, setCsvNote] = useState(false);
+  const [csvBusy, setCsvBusy] = useState(false);
+  const [csvReport, setCsvReport] = useState(null);   // {created, linked, items[]} après un import
+  const [reqRaw, setReqRaw] = useState(null);         // demandes des membres au club ; null = pas encore lues
+  const [reqFailed, setReqFailed] = useState(false);
+  const [reqOpen, setReqOpen] = useState('');
+  const [reqFilter, setReqFilter] = useState('all');
+  const [reqReply, setReqReply] = useState({});
+  const [reqBusy, setReqBusy] = useState('');
   const [exporting, setExporting] = useState('');
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
@@ -548,6 +534,12 @@ export default function Club() {
     loadParentsData(clubId);
   }, [clubId, parentsRaw, loadParentsData]);
 
+  /* Les demandes aussi : le compteur « à traiter » du menu en dépend. */
+  useEffect(() => {
+    if (!clubId || reqRaw !== null) return;
+    loadRequests(clubId);
+  }, [clubId, reqRaw, loadRequests]);
+
   /* La section Athlètes agrège tous les groupes, chargée à sa première ouverture. */
   useEffect(() => {
     if (section !== 'athletes' || everyone !== null) return;
@@ -792,20 +784,89 @@ export default function Club() {
   }
 
   /**
-   * Lit un CSV déposé pour n'en garder que le nom et le nombre de lignes de
-   * données. Tout se passe dans le navigateur : le fichier n'est pas envoyé et
-   * l'import n'est pas encore câblé — mais le compteur du bouton est réel.
+   * Lit un CSV déposé, entièrement dans le navigateur : colonnes, dates et emails sont
+   * contrôlés ici, ligne par ligne. Rien n'est écrit tant que le dirigeant n'a pas cliqué « Importer ».
    */
   async function takeCsv(file) {
     if (!file) return;
+    setCsvReport(null);
     try {
       const text = await file.text();
-      const counted = countCsvRows(text);
-      const otherSport = club && club.sport_id ? countOtherSportRows(text, sportLabels(sports.find((s) => s.id === club.sport_id))) : 0;
-      setCsv({ name: file.name, rows: Math.max(0, counted - otherSport), skipped: otherSport });
+      const sp = club && club.sport_id ? sports.find((x) => x.id === club.sport_id) : null;
+      const parsed = readImport(text, { teams, sportLabels: sportLabels(sp) });
+      setCsv({ name: file.name, rows: parsed.rows.length, skipped: parsed.skipped, parsed });
     } catch {
-      setCsv({ name: file.name, rows: 0 });
+      setCsv({ name: file.name, rows: 0, skipped: 0, parsed: null });
     }
+  }
+
+  /**
+   * Écrit les lignes valides : un licencié par ligne, puis ses parents via
+   * admin_link_parent_by_email (même logique que le rattachement manuel). Une ligne en erreur
+   * ou un email sans compte est consigné dans le rapport sans arrêter les suivantes.
+   */
+  async function importCsv() {
+    const rowsIn = csv?.parsed?.rows || [];
+    if (!club || csvBusy || rowsIn.length === 0) return;
+    setErr(''); setCsvBusy(true);
+    const report = { created: 0, linked: 0, items: (csv.parsed.problems || []).map((x) => ({ ...x })) };
+    try {
+      const { data: existing, error: exErr } = await supabase.from('players')
+        .select('first_name,last_name,birthdate').eq('club_id', club.id);
+      if (exErr) throw exErr;
+      const sig = (f, l, b) => `${fold(f)}|${fold(l)}|${b || ''}`;
+      const have = new Set((existing || []).map((x) => sig(x.first_name, x.last_name, x.birthdate)));
+      for (const r of rowsIn) {
+        if (have.has(sig(r.first, r.last, r.birth))) { report.items.push({ line: r.line, key: 'rowDupDb' }); continue; }
+        const { data: row, error } = await supabase.from('players')
+          .insert({ club_id: club.id, team_id: r.teamId, first_name: r.first, last_name: r.last || null, birthdate: r.birth })
+          .select('id').single();
+        if (error || !row) { console.error('[csv_import]', error && error.code); report.items.push({ line: r.line, key: 'rowFail' }); continue; }
+        report.created += 1; have.add(sig(r.first, r.last, r.birth));
+        for (const mail of r.mails) {
+          const { error: linkErr } = await supabase.rpc('admin_link_parent_by_email', { p_player: row.id, p_email: mail });
+          if (!linkErr) { report.linked += 1; continue; }
+          const noAccount = `${linkErr.message || ''}`.includes('Aucun compte');
+          report.items.push({ line: r.line, key: noAccount ? 'rowNoAccount' : 'rowLinkFail', vars: { value: mail }, warn: true });
+        }
+      }
+      report.items.sort((x, y) => x.line - y.line);
+      setCsvReport(report); setCsv(null);
+      await loadStats(club.id, teams);
+      await loadHeads(teams);
+      setEveryone(null);
+      setParentsRaw(null);
+      for (const tid of Object.keys(details)) await loadTeamDetail(tid);
+    } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setCsvBusy(false); }
+  }
+
+  /* ---------- onglet Messages : demandes des parents et coachs au club ---------- */
+
+  const loadRequests = useCallback(async (cid) => {
+    const { data, error } = await supabase.schema('yps').rpc('club_requests_for_admin', { p_club: cid });
+    if (error) { console.error('club_requests_for_admin', error.code); setReqFailed(true); setReqRaw([]); return; }
+    setReqFailed(false);
+    setReqRaw(Array.isArray(data) ? data : []);
+  }, []);
+
+  async function replyRequest(id) {
+    const text = (reqReply[id] || '').trim();
+    if (!text || reqBusy) return;
+    setErr(''); setReqBusy(`r-${id}`);
+    const { error } = await supabase.schema('yps').rpc('reply_club_request', { p_request: id, p_body: text });
+    setReqBusy('');
+    if (error) { console.error('reply_club_request', error.message); setErr(t(requestError(error))); return; }
+    setReqReply((m) => ({ ...m, [id]: '' }));
+    await loadRequests(clubId);
+  }
+
+  async function closeRequest(id) {
+    if (reqBusy) return;
+    setErr(''); setReqBusy(`c-${id}`);
+    const { error } = await supabase.schema('yps').rpc('close_club_request', { p_request: id });
+    setReqBusy('');
+    if (error) { console.error('close_club_request', error.message); setErr(t(requestError(error))); return; }
+    await loadRequests(clubId);
   }
 
   const css = `
@@ -921,6 +982,7 @@ export default function Club() {
     athletes: memberCount,
     parents: parentsRaw ? new Set(parentsRaw.rels.filter((r) => r.status !== 'rejected').map((r) => r.uid)).size : null,
     coaches: coachCount,
+    messages: reqRaw ? reqRaw.filter((r) => r.status === 'open').length : null,
     licences: memberCount,
     seasons: seasons.length,
     documents: documents.length,
@@ -1038,7 +1100,10 @@ export default function Club() {
   const headButtons = (onNew) => (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
       <button type="button" className="btn ghost" style={{ width: 'auto', padding: '11px 16px', fontSize: 14 }}
-        onClick={() => setCsvNote((v) => !v)}>
+        onClick={() => {
+          setSection('licences'); setMenuOpen(false);
+          setTimeout(() => document.getElementById('adm-csv')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+        }}>
         {t('adm.importCsv')}
       </button>
       <button type="button" className="btn" style={{ width: 'auto', padding: '11px 16px', fontSize: 14 }}
@@ -1200,12 +1265,32 @@ export default function Club() {
 
   /* ---------- blocs de la section Licenciés ---------- */
 
+  /** Lignes du rapport / de l'aperçu : « Ligne 4 : … », avertissements (email) distingués des lignes écartées. */
+  const importItems = (items) => (
+    <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 4 }}>
+      {items.slice(0, 40).map((it, i) => (
+        <div key={`${it.line}-${it.key}-${i}`} style={{ fontSize: 12.5, lineHeight: 1.45, overflowWrap: 'anywhere',
+          color: it.warn ? '#8A5A18' : '#9A3412' }}>
+          {t('adm.lic.rowLine', { n: it.line })} : {t(`adm.lic.${it.key}`, it.vars || {})}
+        </div>
+      ))}
+      {items.length > 40 && (
+        <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{t('adm.lic.rowMore', { n: items.length - 40 })}</div>
+      )}
+    </div>
+  );
+
   const csvCard = () => {
     const rows = csv ? csv.rows : 0;
-    const off = rows === 0;
+    const off = rows === 0 || csvBusy;
+    const sportLabel = sportName(sports.find((s) => s.id === club?.sport_id));
+    const problems = csv?.parsed?.problems || [];
     return (
-      <div className="card" style={{ marginBottom: 0 }}>
+      <div id="adm-csv" className="card" style={{ marginBottom: 0 }}>
         <div className="label" style={{ marginBottom: 10 }}>{t('adm.lic.importTitle')}</div>
+        <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.55, marginBottom: 12 }}>
+          {t('adm.lic.help', { g1: sampleGroups(sportLabel)[0] })}
+        </div>
 
         <label
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
@@ -1215,7 +1300,7 @@ export default function Club() {
             border: `1.5px dashed ${dragging ? 'var(--brand)' : '#E0D5CB'}`,
             background: dragging ? 'var(--peach)' : '#FDFAF7' }}>
           <input type="file" accept=".csv,text/csv" style={{ display: 'none' }}
-            onChange={(e) => takeCsv(e.target.files?.[0])} />
+            onChange={(e) => { takeCsv(e.target.files?.[0]); e.target.value = ''; }} />
           <span aria-hidden="true" style={{ display: 'block', fontSize: 26, marginBottom: 6 }}>📄</span>
           <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700 }}>{t('adm.lic.drop')}</span>
           {csv && (
@@ -1225,10 +1310,26 @@ export default function Club() {
           )}
           {csv && csv.skipped > 0 && (
             <span style={{ display: 'block', fontSize: 12.5, color: '#9A3412', marginTop: 6, lineHeight: 1.45 }}>
-              {t('adm.lic.csvOtherSport', { n: csv.skipped, sport: sportName(sports.find((s) => s.id === club?.sport_id)) })}
+              {t('adm.lic.csvOtherSport', { n: csv.skipped, sport: sportLabel })}
             </span>
           )}
         </label>
+
+        {csv && (!csv.parsed || csv.parsed.headerError) && (
+          <div className="error" role="alert" style={{ marginTop: 12 }}>{t('adm.lic.headerErr')}</div>
+        )}
+        {csv?.parsed && !csv.parsed.headerError && problems.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <div className="label">{t('adm.lic.toCheck')}</div>
+            {importItems(problems)}
+          </div>
+        )}
+        {csvReport && (
+          <div style={{ marginTop: 12 }}>
+            <div className="pill">{t('adm.lic.done', { n: csvReport.created, m: csvReport.linked })}</div>
+            {csvReport.items.length > 0 && importItems(csvReport.items)}
+          </div>
+        )}
 
         <div className="label" style={{ margin: '16px 0 8px' }}>{t('adm.lic.mapping')}</div>
         <div className="cons-map cons-th" style={{ paddingBottom: 6 }}>
@@ -1240,17 +1341,19 @@ export default function Club() {
           <div key={c.col} className="cons-map" style={{ borderTop: '1px solid var(--border)', padding: '9px 0' }}>
             <code style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--brand-dark)' }}>{c.col}</code>
             <div style={{ fontSize: 13 }}>{t(c.field)}</div>
-            <div style={{ fontSize: 12.5, color: 'var(--muted)', overflowWrap: 'anywhere' }}>{c.sample}</div>
+            <div style={{ fontSize: 12.5, color: 'var(--muted)', overflowWrap: 'anywhere' }}>
+              {c.col === 'groupe' ? sampleGroups(sportLabel)[0] : c.sample}
+            </div>
           </div>
         ))}
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
-          <button type="button" className="btn" disabled={off} onClick={() => setCsvNote(true)}
+          <button type="button" className="btn" disabled={off} onClick={importCsv}
             style={{ width: 'auto', padding: '12px 18px', fontSize: 14,
               opacity: off ? 0.5 : 1, cursor: off ? 'not-allowed' : 'pointer' }}>
-            {t('adm.lic.importN', { n: rows })}
+            {csvBusy ? '…' : t('adm.lic.importN', { n: rows })}
           </button>
-          <button type="button" className="btn ghost" onClick={downloadCsvTemplate}
+          <button type="button" className="btn ghost" onClick={() => downloadCsvTemplate(sportLabel)}
             style={{ width: 'auto', padding: '12px 18px', fontSize: 14 }}>
             {t('adm.lic.template')}
           </button>
@@ -1372,11 +1475,6 @@ export default function Club() {
       <>
         {sectionHead('adm.nav.teams', headButtons())}
 
-        {csvNote && (
-          <div className="card" style={{ background: '#fff', fontSize: 13, color: 'var(--muted)', lineHeight: 1.55 }}>
-            {t('adm.importSoon')}
-          </div>
-        )}
 
         {/* Bandeau Isolation */}
         <div className="card" style={{ background: 'var(--peach)', border: 'none' }}>
@@ -1891,9 +1989,6 @@ export default function Club() {
           </div>
         </div>
 
-        {csvNote && (
-          <div className="card" style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.55 }}>{t('adm.importSoon')}</div>
-        )}
 
         <div className="cons-grid">
           {/* ============ Colonne principale ============ */}
@@ -2047,11 +2142,8 @@ export default function Club() {
 
     return (
       <>
-        {sectionHead('adm.sup.title', headButtons())}
+        {sectionHead('adm.sup.title')}
 
-        {csvNote && (
-          <div className="card" style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.55 }}>{t('adm.importSoon')}</div>
-        )}
 
         <div className="cons-two">
           {/* ============ Contacter le support ============ */}
@@ -2117,6 +2209,94 @@ export default function Club() {
     );
   }
 
+  function MessagesSection() {
+    const all = reqRaw || [];
+    const shown = reqFilter === 'all' ? all : all.filter((r) => r.status === reqFilter);
+    const filt = (key, label) => (
+      <button key={key} type="button" onClick={() => setReqFilter(key)}
+        style={{ flex: '0 0 auto', padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+          border: `1.5px solid ${reqFilter === key ? 'var(--brand)' : 'var(--border)'}`,
+          background: reqFilter === key ? 'var(--brand)' : '#fff', color: reqFilter === key ? '#fff' : 'var(--ink)' }}>
+        {label}
+      </button>
+    );
+    return (
+      <>
+        {sectionHead('adm.nav.messages')}
+        <div className="card" style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>{t('msg.intro')}</div>
+
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2, marginBottom: 14 }}>
+          {filt('all', t('msg.fAll'))}
+          {filt('open', t('ctc.stOpen'))}
+          {filt('answered', t('ctc.stAnswered'))}
+          {filt('closed', t('ctc.stClosed'))}
+        </div>
+
+        {reqFailed && <div className="error" role="alert">{t('msg.loadErr')}</div>}
+        {reqRaw === null && !reqFailed && <div style={{ fontSize: 13, color: 'var(--muted)' }}>…</div>}
+        {reqRaw !== null && !reqFailed && shown.length === 0 && (
+          <div className="card" style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>
+            {t(all.length === 0 ? 'msg.empty' : 'msg.emptyFilter')}
+          </div>
+        )}
+
+        {shown.map((r) => {
+          const st = requestStatus(r.status);
+          const open = reqOpen === r.id;
+          const who = r.from_name || t('msg.former');
+          return (
+            <div key={r.id} className="card" style={{ marginBottom: 12 }}>
+              <button type="button" aria-expanded={open} onClick={() => setReqOpen(open ? '' : r.id)}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, border: 'none', background: 'transparent',
+                  padding: 0, font: 'inherit', color: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 14, fontWeight: 700, overflowWrap: 'anywhere' }}>{r.subject}</span>
+                  <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                    {[who, t(`msg.role.${r.from_role}`), dayText((r.updated_at || r.created_at || '').slice(0, 10))].filter(Boolean).join(' · ')}
+                  </span>
+                </span>
+                <span style={{ flex: '0 0 auto', fontSize: 11.5, fontWeight: 700, padding: '5px 10px', borderRadius: 999,
+                  background: st.bg, color: st.ink }}>{t(st.key)}</span>
+              </button>
+              {open && (
+                <div style={{ marginTop: 12 }}>
+                  {(r.messages || []).map((m) => (
+                    <div key={m.id} style={{ margin: '6px 0', padding: '9px 12px', borderRadius: 14, fontSize: 13.5, lineHeight: 1.5,
+                      background: m.side === 'club' ? 'var(--peach)' : '#F6F3EC', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 2 }}>
+                        {m.side === 'club' ? t('msg.club') : (m.author_name || t('msg.former'))} · {dayText((m.created_at || '').slice(0, 10))}
+                      </div>
+                      {m.body}
+                    </div>
+                  ))}
+                  {r.status !== 'closed' ? (
+                    <>
+                      <textarea className="input" rows={3} value={reqReply[r.id] || ''} maxLength={MAX_BODY}
+                        placeholder={t('msg.replyPh')} style={{ marginTop: 8, resize: 'vertical', lineHeight: 1.5 }}
+                        onChange={(e) => setReqReply((m) => ({ ...m, [r.id]: e.target.value }))} />
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <button type="button" className="btn" disabled={reqBusy !== ''}
+                          style={{ width: 'auto', padding: '10px 16px', fontSize: 13.5 }} onClick={() => replyRequest(r.id)}>
+                          {reqBusy === `r-${r.id}` ? '…' : t('msg.reply')}
+                        </button>
+                        <button type="button" className="btn ghost" disabled={reqBusy !== ''}
+                          style={{ width: 'auto', padding: '10px 16px', fontSize: 13.5 }} onClick={() => closeRequest(r.id)}>
+                          {reqBusy === `c-${r.id}` ? '…' : t('ctc.close')}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 8 }}>{t('msg.closedNote')}</div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </>
+    );
+  }
+
   /* Appelées comme de simples fonctions, pas montées comme des composants :
      un composant redéfini à chaque rendu serait remonté à chaque frappe et les
      champs de saisie perdraient le focus. */
@@ -2125,6 +2305,7 @@ export default function Club() {
     athletes: AthletesSection,
     parents: ParentsSection,
     coaches: CoachesSection,
+    messages: MessagesSection,
     licences: LicencesSection,
     seasons: SeasonsSection,
     documents: DocumentsSection,
