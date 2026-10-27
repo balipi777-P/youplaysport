@@ -116,6 +116,30 @@ function countCsvRows(text) {
   return Math.max(0, lines.length - 1);
 }
 
+/** Noms (fr/en, sans casse ni accents) sous lesquels le sport du club peut apparaître dans un CSV. */
+function sportLabels(sp) {
+  const fold = (x) => `${x || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  return sp ? [fold(sp.name_fr), fold(sp.name_en)].filter(Boolean) : [];
+}
+
+/**
+ * Lignes d'un CSV dont la colonne « sport » (si elle existe) désigne un autre sport
+ * que celui du club. Une cellule vide n'est pas un autre sport.
+ */
+function countOtherSportRows(text, labels) {
+  const fold = (x) => `${x || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  const lines = text.replace(/^\ufeff/, '').split(/\r?\n/).filter((l) => l.trim() !== '');
+  if (lines.length < 2 || !labels.length) return 0;
+  const sep = lines[0].includes(';') && !lines[0].includes(',') ? ';' : ',';
+  const head = lines[0].split(sep).map(fold);
+  const at = head.indexOf('sport');
+  if (at < 0) return 0;
+  return lines.slice(1).filter((ln) => {
+    const cell = fold((ln.split(sep)[at] || '').replace(/^"|"$/g, ''));
+    return cell !== '' && !labels.includes(cell);
+  }).length;
+}
+
 /** Jours pleins entre aujourd'hui et une date, jamais négatif. */
 function daysUntil(iso) {
   const end = new Date(iso);
@@ -394,7 +418,7 @@ export default function Club() {
       const { data } = await supabase.auth.getSession();
       if (!data.session) { router.replace('/login'); return; }
       const { data: mem } = await supabase.from('memberships')
-        .select('club_id, clubs(id, name, join_code, created_at, trial_ends_at, logo_url, accent_color, secondary_color, plan_key, status)')
+        .select('club_id, clubs(id, name, join_code, created_at, trial_ends_at, logo_url, accent_color, secondary_color, plan_key, status, sport_id)')
         .eq('role', 'admin');
       /* Club courant choisi dans le sélecteur d'espace, sinon le premier. */
       const cur = (mem || []).find((m) => m.club_id === getStored(KEY_CLUB)) || (mem && mem[0]);
@@ -402,7 +426,8 @@ export default function Club() {
       setClub(c);
       const { data: sp } = await supabase.from('sports').select('id, name_fr, name_en, icon').order('name_fr');
       setSports(sp || []);
-      if (sp && sp[0]) setTeamSport(sp[0].id);
+      if (c && c.sport_id) setTeamSport(c.sport_id);
+      else if (sp && sp[0]) setTeamSport(sp[0].id);
       if (c) {
         await loadTeams(c.id);
         const [se, doc, tk] = await Promise.all([
@@ -497,13 +522,19 @@ export default function Club() {
     try {
       /* Arts martiaux : la discipline précisée sert de nom si aucun nom n'est saisi ;
          sport_id reste celui du référentiel. */
-      const chosen = sports.find((s) => s.id === teamSport);
+      const sportToCreate = (club && club.sport_id) || teamSport;
+      const chosen = sports.find((s) => s.id === sportToCreate);
       const discipline = isMartialSport(chosen) ? teamDiscipline.trim() : '';
       const name = teamName.trim() || discipline || (isMartialSport(chosen) ? sportName(chosen) : '');
       if (!name) throw new Error(t('club.errTeamName'));
       const { data, error } = await supabase.from('teams')
-        .insert({ club_id: club.id, sport_id: teamSport, name }).select('id').single();
+        .insert({ club_id: club.id, sport_id: sportToCreate, name }).select('id').single();
       if (error) throw error;
+      /* Premier groupe d'un club sans sport : son sport devient celui du club. */
+      if (!club.sport_id) {
+        const { error: clubSportErr } = await supabase.from('clubs').update({ sport_id: sportToCreate }).eq('id', club.id);
+        if (!clubSportErr) setClub((cur) => ({ ...cur, sport_id: sportToCreate }));
+      }
       setTeamName(''); setTeamDiscipline(''); flash(t('club.teamCreated'));
       await loadTeams(club.id, data.id);
     } catch (e) { setErr(friendlyError(e, t('club.errGeneric'))); } finally { setBusy(false); }
@@ -661,7 +692,9 @@ export default function Club() {
     if (!file) return;
     try {
       const text = await file.text();
-      setCsv({ name: file.name, rows: countCsvRows(text) });
+      const counted = countCsvRows(text);
+      const otherSport = club && club.sport_id ? countOtherSportRows(text, sportLabels(sports.find((s) => s.id === club.sport_id))) : 0;
+      setCsv({ name: file.name, rows: Math.max(0, counted - otherSport), skipped: otherSport });
     } catch {
       setCsv({ name: file.name, rows: 0 });
     }
@@ -1029,6 +1062,11 @@ export default function Club() {
           {csv && (
             <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--brand-dark)', marginTop: 7 }}>
               {csv.name} · {t(rows === 1 ? 'adm.lic.rowOne' : 'adm.lic.rowMany', { n: rows })}
+            </span>
+          )}
+          {csv && csv.skipped > 0 && (
+            <span style={{ display: 'block', fontSize: 12.5, color: '#9A3412', marginTop: 6, lineHeight: 1.45 }}>
+              {t('adm.lic.csvOtherSport', { n: csv.skipped, sport: sportName(sports.find((s) => s.id === club?.sport_id)) })}
             </span>
           )}
         </label>
@@ -1465,10 +1503,17 @@ export default function Club() {
                 <div className="label" style={{ marginBottom: 8 }}>{t('club.createTeam')}</div>
                 <input id="adm-newteam" className="input" value={teamName}
                   onChange={(e) => setTeamName(e.target.value)} placeholder={t('club.teamNamePh')} />
-                <select className="input" value={teamSport} onChange={(e) => setTeamSport(e.target.value)}>
-                  {sports.map((s) => <option key={s.id} value={s.id}>{s.icon} {sportName(s)}</option>)}
+                <select className="input" value={club.sport_id || teamSport} disabled={!!club.sport_id}
+                  onChange={(e) => setTeamSport(e.target.value)}>
+                  {(club.sport_id ? sports.filter((s) => s.id === club.sport_id) : sports)
+                    .map((s) => <option key={s.id} value={s.id}>{s.icon} {sportName(s)}</option>)}
                 </select>
-                {isMartialSport(sports.find((s) => s.id === teamSport)) && (
+                {club.sport_id && (
+                  <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '-4px 0 8px', lineHeight: 1.45 }}>
+                    {t('club.oneSportHint', { sport: sportName(sports.find((s) => s.id === club.sport_id)) })}
+                  </div>
+                )}
+                {isMartialSport(sports.find((s) => s.id === (club.sport_id || teamSport))) && (
                   <MartialDiscipline value={teamDiscipline} onChange={setTeamDiscipline} />
                 )}
                 <button className="btn" disabled={busy} onClick={addTeam}>{busy ? '…' : t('club.doCreateTeam')}</button>

@@ -283,7 +283,7 @@ export function MartialDiscipline({ value, onChange }) {
 export function ClubWelcome({ club, sports, onDone, onSkip }) {
   const { t, lang } = useT();
   const [step, setStep] = useState(0);
-  const [picked, setPicked] = useState([]);
+  const [picked, setPicked] = useState(club.sport_id ? [club.sport_id] : []);
   const [discipline, setDiscipline] = useState('');
   const [accent, setAccent] = useState(isHex(club.accent_color) ? club.accent_color : DEFAULT_ACCENT);
   const [secondary, setSecondary] = useState(isHex(club.secondary_color) ? club.secondary_color : DEFAULT_SECONDARY);
@@ -292,7 +292,8 @@ export function ClubWelcome({ club, sports, onDone, onSkip }) {
   const [err, setErr] = useState('');
   const fileUrl = useObjectUrl(file);
   const sportName = (s) => (lang === 'en' ? s?.name_en || s?.name_fr : s?.name_fr) || '';
-  const toggle = (id) => setPicked((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
+  const toggle = (id) => setPicked([id]); // un club = un seul sport
+  const sportChoices = club.sport_id ? sports.filter((s) => s.id === club.sport_id) : sports;
 
   async function finish() {
     setBusy(true); setErr('');
@@ -302,7 +303,11 @@ export function ClubWelcome({ club, sports, onDone, onSkip }) {
         .map((s) => ({ club_id: club.id, sport_id: s.id, name: (isMartialSport(s) && discipline.trim()) || sportName(s) }));
       const { error } = await supabase.from('teams').insert(rows);
       if (error) throw error;
-      await onDone({ accent_color: accent, secondary_color: secondary, logo_url: r.logo_url }, { logoFailed: r.logoFailed });
+      if (!club.sport_id && rows[0]) {
+        const { error: welcomeSportErr } = await supabase.from('clubs').update({ sport_id: rows[0].sport_id }).eq('id', club.id);
+        if (welcomeSportErr) throw welcomeSportErr;
+      }
+      await onDone({ accent_color: accent, secondary_color: secondary, logo_url: r.logo_url, sport_id: club.sport_id || (rows[0] && rows[0].sport_id) || null }, { logoFailed: r.logoFailed });
     } catch (e) { setErr(brandingError(e, t)); setBusy(false); }
   }
 
@@ -320,7 +325,7 @@ export function ClubWelcome({ club, sports, onDone, onSkip }) {
 
       {step === 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-          {sports.map((s) => {
+          {sportChoices.map((s) => {
             const on = picked.includes(s.id);
             return (
               <button key={s.id} type="button" onClick={() => toggle(s.id)} aria-pressed={on}

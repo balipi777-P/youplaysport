@@ -18,11 +18,13 @@ const ROLE_KEYS = [
 
 export default function Onboarding() {
   const router = useRouter();
-  const { t } = useT();
+  const { t, lang } = useT();
   const [ready, setReady] = useState(false);
   const [step, setStep] = useState('role'); // 'role' | 'club'
   const [role, setRole] = useState(null);
   const [clubName, setClubName] = useState('');
+  const [newClubSport, setNewClubSport] = useState('');
+  const [sportList, setSportList] = useState([]);
   const [clubCode, setClubCode] = useState('');
   const [consent, setConsent] = useState(false);
   const [err, setErr] = useState('');
@@ -42,6 +44,8 @@ export default function Onboarding() {
         return;
       }
       /* Un rôle dans un club mais aucun espace : on attend le rattachement, pas de retour au choix du profil. */
+      const { data: sportRows } = await supabase.from('sports').select('id, name_fr, name_en, icon').order('name_fr');
+      setSportList(sportRows || []);
       setWaiting(await fetchPendingMembership());
       setReady(true);
     })();
@@ -70,8 +74,15 @@ export default function Onboarding() {
     try {
       if (role === 'dirigeant') {
         if (!clubName.trim()) throw new Error(t('onb.errClubName'));
+        if (!newClubSport) throw new Error(t('onb.errClubSport'));
         const { data: created, error } = await supabase.rpc('create_club', { p_name: clubName.trim() });
         if (error) throw error;
+        const createdClubId = created && typeof created === 'object' && !Array.isArray(created)
+          ? (created.club_id || created.id || '') : (typeof created === 'string' ? created : '');
+        if (createdClubId) {
+          const { error: sportErr } = await supabase.from('clubs').update({ sport_id: newClubSport }).eq('id', createdClubId);
+          if (sportErr) throw sportErr;
+        }
         await enterAfter('admin', created);
         return;
       } else {
@@ -153,6 +164,13 @@ export default function Onboarding() {
             <div className="label" style={{ marginBottom: 6 }}>{t('onb.clubName')}</div>
             <input className="input" value={clubName} onChange={(e) => setClubName(e.target.value)}
               placeholder={t('onb.clubNamePh')} />
+            <div className="label" style={{ marginBottom: 6 }}>{t('onb.clubSport')}</div>
+            <select className="input" value={newClubSport} onChange={(e) => setNewClubSport(e.target.value)}>
+              <option value="">{t('onb.clubSportPh')}</option>
+              {sportList.map((sp) => (
+                <option key={sp.id} value={sp.id}>{sp.icon} {(lang === 'en' ? sp.name_en || sp.name_fr : sp.name_fr) || ''}</option>
+              ))}
+            </select>
             <button className="btn" disabled={busy} onClick={submit}>{busy ? '…' : t('onb.doCreateClub')}</button>
           </div>
           <p style={{ textAlign: 'center', fontSize: 13 }}>
