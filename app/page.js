@@ -6,13 +6,14 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../lib/supabaseClient';
 import { loadMyChildren, pickChild, setStoredChildId } from '../lib/children';
 import { getStored, KEY_CLUB, fetchMySpaces, validStoredSpace } from '../lib/spaces';
-import { useT, LangToggle } from '../lib/i18n';
+import { useT } from '../lib/i18n';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from './components/BottomNav';
 import ClubAvatar from './components/ClubAvatar';
 import { NAME_EVENT, fetchMyName } from '../lib/userName';
 import ParentJournal from './components/ParentJournal';
 import { withNotes } from '../lib/eventNotes';
 import AthleteToday from './components/AthleteToday';
+import AppHeader from './components/AppHeader';
 import CoachGroups from './components/CoachGroups';
 import PendingLinks from './components/PendingLinks';
 import Icon from './components/Icon';
@@ -417,33 +418,7 @@ export default function Home() {
     <div className="wrap" style={{ paddingBottom: BOTTOM_NAV_HEIGHT + 24 }}>
       <PilotBanner compact style={{ marginTop: 4 }} />
       {!player && !staff && (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-        {headClub ? (
-          /* Le club en évidence ; YouPlaySport reste en filigrane. */
-          <div className="brand" style={{ minWidth: 0 }}>
-            <ClubAvatar name={headClub.name} logoUrl={headClub.logo_url} color={headClub.accent_color || 'var(--brand)'}
-              size={40} radius={13} fontSize={14} />
-            <div style={{ minWidth: 0 }}>
-              <div className="q" style={{ fontWeight: 700, fontSize: 16, lineHeight: 1.2, overflow: 'hidden',
-                textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{headClub.name}</div>
-              <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--muted)', opacity: .8, letterSpacing: '.2px' }}>
-                YouPlaySport
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="brand">
-            <div className="logo">Y</div>
-            <div className="q" style={{ fontWeight: 700, fontSize: 17 }}>
-              You<span style={{ color: 'var(--brand)' }}>Play</span>Sport
-            </div>
-          </div>
-        )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <LangToggle />
-          <a href="#" onClick={(e) => { e.preventDefault(); logout(); }} style={{ fontSize: 13, fontWeight: 700 }}>{t('common.logout')}</a>
-        </div>
-      </div>
+        <AppHeader headClub={headClub} userName={userName} onProfile={() => router.push('/mes-donnees')} onLogout={logout} />
       )}
 
       {err && <div className="error">{err}</div>}

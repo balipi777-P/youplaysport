@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Icon from './Icon';
-import HeaderActions from './HeaderActions';
+import AppHeader from './AppHeader';
 import Accordion from './Accordion';
 import { useT } from '../../lib/i18n';
 import ClubAvatar from './ClubAvatar';
@@ -148,23 +148,7 @@ export default function ParentJournal({
         </div>
       )}
 
-      {/* ---- En-tête : club en petit à gauche, déconnexion + avatar à droite ---- */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
-          {headClub ? (
-            <>
-              <ClubAvatar name={headClub.name} logoUrl={headClub.logo_url} color={headClub.accent_color || 'var(--brand)'}
-                size={30} radius={10} fontSize={12} />
-              <span className="q" style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {headClub.name}
-              </span>
-            </>
-          ) : (
-            <span className="q" style={{ fontWeight: 700, fontSize: 15 }}>You<span style={{ color: 'var(--brand)' }}>Play</span>Sport</span>
-          )}
-        </div>
-        <HeaderActions userName={userName} onProfile={onProfile} onLogout={onLogout} />
-      </div>
+      <AppHeader headClub={headClub} userName={userName} onProfile={onProfile} onLogout={onLogout} />
 
       {/* ---- Date en petit, puis le titre ---- */}
       <div style={{ color: 'var(--muted)', fontSize: 10.5, fontWeight: 800, letterSpacing: '.9px' }}>{todayLabel}</div>

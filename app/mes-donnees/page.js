@@ -3,12 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
-import { useT, LangToggle } from '../../lib/i18n';
+import { useT } from '../../lib/i18n';
 import { clearSpaceStorage } from '../../lib/spaces';
 import { loadMyChildren } from '../../lib/children';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 import Fold from '../components/Fold';
-import Icon from '../components/Icon';
 import { loadContactClubs } from '../../lib/clubContact';
 import { useClubUnread } from '../../lib/clubUnread';
 
@@ -157,14 +156,6 @@ export default function MesDonnees() {
           </div>
         ))}
       </Fold>
-
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', margin: '0 0 14px' }}>
-        <button type="button" className="yps-logout" onClick={async () => { await supabase.auth.signOut(); router.replace('/login'); }}>
-          <Icon name="logout" size={18} />
-          <span>{t('common.logout')}</span>
-        </button>
-        <LangToggle big />
-      </div>
 
       {me?.kids.length > 0 && (
         <Fold title={t('mydata.kids')} defaultOpen>

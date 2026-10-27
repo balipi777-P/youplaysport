@@ -20,6 +20,7 @@ import { useT } from '../../lib/i18n';
 import { getStored, KEY_CLUB } from '../../lib/spaces';
 import Icon from '../components/Icon';
 import ClubAvatar from '../components/ClubAvatar';
+import AppHeader from '../components/AppHeader';
 import { PendingLinksList } from '../components/PendingLinks';
 import { exportClubCsv } from '../../lib/exports';
 import { readImport, fold } from '../../lib/csvImport';
@@ -2344,31 +2345,6 @@ export default function Club() {
             </button>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
-          {myName && (
-            <button type="button" onClick={() => router.push('/mes-donnees')} aria-label={t('nav.myProfile')}
-              style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0, minHeight: 44, padding: '5px 11px',
-                borderRadius: 14, background: 'var(--peach)', border: 'none', textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer' }}>
-              <span className="q" aria-hidden="true" style={{ width: 34, height: 34, flex: '0 0 34px', borderRadius: 11,
-                background: '#fff', color: 'var(--brand-dark)', display: 'flex', alignItems: 'center',
-                justifyContent: 'center', fontSize: 13, fontWeight: 800 }}>{initialsOfName(myName)}</span>
-              <span style={{ minWidth: 0 }}>
-                <span className="q" style={{ display: 'block', fontWeight: 700, fontSize: 14, color: '#5F2A1C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {t('hello.name', { name: firstNameOf(myName) })}
-                </span>
-                <span style={{ display: 'block', fontSize: 11.5, color: '#7A4030', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {[t('me.adminRole'), club.name].join(' · ')}
-                </span>
-              </span>
-            </button>
-          )}
-          <button type="button" className="yps-logout" onClick={logout} aria-label={t('common.logout')}
-            style={myName ? { flex: '0 0 auto' } : { flex: 1 }}>
-            <Icon name="logout" size={18} />
-            <span className="yps-logout-txt">{t('common.logout')}</span>
-          </button>
-          </div>
-
           {menuOpen && <div className="cons-backdrop" onClick={() => setMenuOpen(false)} aria-hidden="true" />}
           <div className="cons-fold">
           <nav style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -2442,6 +2418,7 @@ export default function Club() {
 
         {/* ===================== Zone de contenu ===================== */}
         <main className="cons-main">
+          <AppHeader hideBrand userName={myName} onProfile={() => router.push('/mes-donnees')} onLogout={logout} />
           {err && <div className="error" role="alert">{err}</div>}
           {ok && <div className="pill" style={{ marginBottom: 12 }}>{ok}</div>}
           {current}

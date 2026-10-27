@@ -2,7 +2,7 @@
 
 import { useT } from '../../lib/i18n';
 import CoachNextEvent from './CoachNextEvent';
-import AccountHeader from './AccountHeader';
+import AppHeader from './AppHeader';
 import { firstNameOf } from '../../lib/userName';
 
 /* Onglet « Groupes » du coach — l'accueil de son espace. Composant purement
@@ -74,7 +74,7 @@ export default function CoachGroups({
   return (
     <>
       {showAccountHeader && (
-        <AccountHeader headClub={headClub} userName={coachName} onProfile={onProfile} onLogout={onLogout} />
+        <AppHeader headClub={headClub} userName={coachName} onProfile={onProfile} onLogout={onLogout} />
       )}
       {/* ---- Date en petit, puis le nom ---- */}
       <div style={{ color: 'var(--muted)', fontSize: 10.5, fontWeight: 800, letterSpacing: '.9px' }}>{todayLabel}</div>

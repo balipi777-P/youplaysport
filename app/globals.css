@@ -37,3 +37,17 @@ a { color: var(--brand-dark); }
 /* Bouton « Se déconnecter » de l'en-tête d'accueil : icône + texte, 44 px ; icône seule sur très petit écran. */
 .yps-logout { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:44px; min-width:44px; padding:0 12px; border-radius:14px; border:1px solid var(--border); background:#fff; color:var(--ink); font-family:inherit; font-size:13px; font-weight:700; cursor:pointer; white-space:nowrap; }
 @media (max-width: 340px) { .yps-logout { padding:0; } .yps-logout-txt { display:none; } }
+
+/* En-tête commun AppHeader : mobile sur deux lignes, tablette et ordinateur sur une ligne. */
+.app-hdr { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"brand avatar" "lang logout"; gap:10px; align-items:center; margin-bottom:18px; min-width:0; }
+.app-hdr > * { min-width:0; }
+.app-hdr-brand { grid-area:brand; display:flex; align-items:center; gap:10px; }
+.app-hdr-name { font-weight:700; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.app-hdr-avatar { width:44px; height:44px; border-radius:14px; border:none; color:var(--brand-dark); font-size:14px; font-weight:800; cursor:pointer; font-family:inherit; display:flex; align-items:center; justify-content:center; }
+.app-hdr .yps-logout { justify-self:end; }
+.app-hdr > div:not(.app-hdr-brand) { justify-self:start; }
+@media (min-width: 640px) {
+  .app-hdr { grid-template-columns:minmax(0,1fr) auto auto auto; grid-template-areas:"brand lang logout avatar"; gap:12px; }
+}
+.app-hdr--nobrand { grid-template-columns:auto auto auto; grid-template-areas:"lang logout avatar"; justify-content:end; }
+@media (min-width: 640px) { .app-hdr--nobrand { grid-template-columns:auto auto auto; grid-template-areas:"lang logout avatar"; } }

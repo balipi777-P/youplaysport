@@ -3,7 +3,7 @@
 import { useT } from '../../lib/i18n';
 import { firstNameOf } from '../../lib/userName';
 import EventNotes from './EventNotes';
-import HeaderActions from './HeaderActions';
+import AppHeader from './AppHeader';
 
 /* Vue « Aujourd'hui » de l'athlète, au tutoiement. Composant purement présentatif :
    l'accueil reste seul à parler à Supabase et passe tout en props.
@@ -109,22 +109,20 @@ export default function AthleteToday({
 
   return (
     <>
-      {/* ---- En-tête : le jour, le salut, l'avatar ---- */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ color: 'var(--muted)', fontSize: 10.5, fontWeight: 800, letterSpacing: '.9px' }}>
-            {todayLabel}
-          </div>
-          <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.4px', margin: '3px 0 4px' }}>
-            {t('athlete.hello', { name: firstNameOf(userName) || player.first_name })}
-          </h1>
-          {(roleLine || clubName || team?.category) && (
-            <div style={{ fontSize: 12.5, color: 'var(--muted)', fontWeight: 600 }}>
-              {[roleLine || clubName, team?.category].filter(Boolean).join(' · ')}
-            </div>
-          )}
+      <AppHeader headClub={team?.clubs || null} userName={userName || `${player.first_name || ''} ${player.last_name || ''}`.trim()}
+        onProfile={onProfile} onLogout={onLogout} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ color: 'var(--muted)', fontSize: 10.5, fontWeight: 800, letterSpacing: '.9px' }}>
+          {todayLabel}
         </div>
-        <HeaderActions userName={userName} onProfile={onProfile} onLogout={onLogout} />
+        <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.4px', margin: '3px 0 4px' }}>
+          {t('athlete.hello', { name: firstNameOf(userName) || player.first_name })}
+        </h1>
+        {(roleLine || clubName || team?.category) && (
+          <div style={{ fontSize: 12.5, color: 'var(--muted)', fontWeight: 600 }}>
+            {[roleLine || clubName, team?.category].filter(Boolean).join(' · ')}
+          </div>
+        )}
       </div>
 
       {/* ---- CE SOIR : la séance du jour, publiée ou non ---- */}
