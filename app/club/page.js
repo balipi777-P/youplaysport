@@ -817,6 +817,8 @@ export default function Club() {
     .cons-main, .cons-main > *, .cons-main .card { min-width: 0; max-width: 100%; }
     .cons-main .input { max-width: 100%; min-width: 0; }
     .cons-main { overflow-wrap: anywhere; }
+    .cons-main select, .cons-main input, .cons-main textarea { max-width: 100%; min-width: 0; }
+    .cons-main button { max-width: 100%; }
     .cons-burger { display: none; }
     .cons-backdrop { display: none; }
     .cons-fold { flex: 1; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
@@ -825,7 +827,7 @@ export default function Club() {
     .cons-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
     .cons-map { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.15fr);
       gap: 8px; align-items: center; }
-    @media (max-width: 1080px) { .cons-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 1080px) { .cons-grid { grid-template-columns: minmax(0, 1fr); } }
     @media (max-width: 900px) {
       .cons { display: block; width: 100%; max-width: 100%; }
       .cons-main { width: 100%; }
@@ -844,14 +846,14 @@ export default function Club() {
       .cons-navbtn[data-on="true"] { box-shadow: 0 2px 10px rgba(0,0,0,.18); }
       .cons-burger { display: inline-flex; }
       .cons-main { padding: 18px 16px 48px; }
-      .cons-two { grid-template-columns: 1fr; }
+      .cons-two { grid-template-columns: minmax(0, 1fr); }
     }
     .tm-head { width: 100%; display: flex; align-items: center; gap: 13px; padding: 16px; border: none;
       background: transparent; font: inherit; text-align: left; cursor: pointer; }
     .tm-name { flex: 1; min-width: 0; }
     .tm-sub-m, .tm-break { display: none; }
     @media (max-width: 640px) {
-      .cons-row { grid-template-columns: 1fr; gap: 3px; }
+      .cons-row { grid-template-columns: minmax(0, 1fr); gap: 3px; }
       .cons-row.cons-th { display: none; }
       .cons-att { text-align: left !important; }
       /* Ligne 1 : repère + nom (jamais coupé) + bouton ; ligne 2 : pastille, texte, compteur. */
@@ -1701,7 +1703,7 @@ export default function Club() {
     };
 
     const parentCard = (pr) => (
-      <div key={pr.uid} style={{ border: '1px solid var(--border)', borderRadius: 16, padding: '12px 14px', background: '#fff' }}>
+      <div key={pr.uid} style={{ border: '1px solid var(--border)', borderRadius: 16, padding: '12px 14px', background: '#fff', minWidth: 0, maxWidth: '100%' }}>
         <div style={{ fontSize: 14.5, fontWeight: 700, overflowWrap: 'anywhere' }}>{pr.label}</div>
         {pr.mail && pr.mail !== pr.label && (
           <div style={{ fontSize: 12, color: 'var(--muted)', overflowWrap: 'anywhere' }}>{pr.mail}</div>
@@ -1735,7 +1737,7 @@ export default function Club() {
     const orphanRow = (pl) => {
       const wait = parentBusy === pl.id;
       return (
-        <div key={pl.id} style={{ border: '1px solid var(--border)', borderRadius: 16, padding: '12px 14px', background: '#fff' }}>
+        <div key={pl.id} style={{ border: '1px solid var(--border)', borderRadius: 16, padding: '12px 14px', background: '#fff', minWidth: 0, maxWidth: '100%' }}>
           <div style={{ fontSize: 14, fontWeight: 700, overflowWrap: 'anywhere' }}>{kidName(pl)}</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>{teamLabelOf(pl.team_id)}</div>
           <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
@@ -1777,7 +1779,7 @@ export default function Club() {
                 {!folded['par:orph'] && (
                   <>
                     <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 10 }}>{t('par.orphansHint')}</div>
-                    <div style={{ display: 'grid', gap: 10 }}>{shownOrphans.map(orphanRow)}</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10, minWidth: 0 }}>{shownOrphans.map(orphanRow)}</div>
                     {shownOrphans.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('par.noMatch')}</div>}
                   </>
                 )}
@@ -1796,7 +1798,7 @@ export default function Club() {
                     {(parentsInTeam.length > 0 || needle || parentFilter !== 'all') && shownParents.length === 0 && (
                       <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t(parentFilter === 'pending' && !needle ? 'par.noPending' : 'par.noMatch')}</div>
                     )}
-                    <div style={{ display: 'grid', gap: 10 }}>{shownParents.map(parentCard)}</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10, minWidth: 0 }}>{shownParents.map(parentCard)}</div>
                     <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 10 }}>{t('par.emailMasked')}</div>
                   </>
                 )}
