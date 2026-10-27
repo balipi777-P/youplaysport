@@ -1,8 +1,9 @@
 'use client';
 
 import { useT } from '../../lib/i18n';
-import { firstNameOf, initialsOfName } from '../../lib/userName';
+import { firstNameOf } from '../../lib/userName';
 import EventNotes from './EventNotes';
+import HeaderActions from './HeaderActions';
 
 /* Vue « Aujourd'hui » de l'athlète, au tutoiement. Composant purement présentatif :
    l'accueil reste seul à parler à Supabase et passe tout en props.
@@ -77,8 +78,6 @@ export default function AthleteToday({
 
   const team = player?.teams;
   const clubName = team?.clubs?.name || '';
-  const initials = initialsOfName(userName)
-    || `${(player?.first_name || '')[0] || ''}${(player?.last_name || '')[0] || ''}`.toUpperCase();
 
   const mot = session?.messages?.find((m) => m.type === 'mot_coach');
   const axes = session?.session_axes || [];
@@ -125,11 +124,7 @@ export default function AthleteToday({
             </div>
           )}
         </div>
-        <span className="q" aria-hidden="true" style={{ flex: '0 0 44px', width: 44, height: 44,
-          borderRadius: 15, background: 'var(--peach)', color: 'var(--brand-dark)', display: 'flex',
-          alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800 }}>
-          {initials}
-        </span>
+        <HeaderActions userName={userName} onProfile={onProfile} onLogout={onLogout} />
       </div>
 
       {/* ---- CE SOIR : la séance du jour, publiée ou non ---- */}

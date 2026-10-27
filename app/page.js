@@ -416,7 +416,7 @@ export default function Home() {
   return (
     <div className="wrap" style={{ paddingBottom: BOTTOM_NAV_HEIGHT + 24 }}>
       <PilotBanner compact style={{ marginTop: 4 }} />
-      {!(player && !isAthlete) && !(staff && !player) && (
+      {!player && !staff && (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
         {headClub ? (
           /* Le club en évidence ; YouPlaySport reste en filigrane. */
@@ -494,6 +494,8 @@ export default function Home() {
           history={history}
           rsvpBusy={rsvpBusy}
           onRespond={respond}
+          onProfile={() => router.push('/mes-donnees')}
+          onLogout={logout}
         />
       )}
 

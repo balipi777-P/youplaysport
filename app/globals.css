@@ -33,3 +33,7 @@ a { color: var(--brand-dark); }
 /* Journal parent : blocs plus aérés (16 px), sans toucher aux autres écrans. */
 .journal .card { margin-bottom:16px; }
 .journal .btn { min-height:44px; }
+
+/* Bouton « Se déconnecter » de l'en-tête d'accueil : icône + texte, 44 px ; icône seule sur très petit écran. */
+.yps-logout { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:44px; min-width:44px; padding:0 12px; border-radius:14px; border:1px solid var(--border); background:#fff; color:var(--ink); font-family:inherit; font-size:13px; font-weight:700; cursor:pointer; white-space:nowrap; }
+@media (max-width: 340px) { .yps-logout { padding:0; } .yps-logout-txt { display:none; } }

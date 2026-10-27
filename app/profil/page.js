@@ -5,8 +5,9 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { loadMyChildren, pickChild, setStoredChildId } from '../../lib/children';
-import { useT } from '../../lib/i18n';
+import { useT, LangToggle } from '../../lib/i18n';
 import Fold from '../components/Fold';
+import Icon from '../components/Icon';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 
 /* Fiche athlète d'un enfant, pour un seul club à la fois : celui de son groupe.
@@ -241,6 +242,13 @@ export default function Profil() {
       <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.4px', margin: '3px 0 14px' }}>
         {[player.first_name, player.last_name].filter(Boolean).join(' ')}
       </h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', margin: '0 0 14px' }}>
+        <button type="button" className="yps-logout" onClick={async () => { await supabase.auth.signOut(); router.replace('/login'); }}>
+          <Icon name="logout" size={18} />
+          <span>{t('common.logout')}</span>
+        </button>
+        <LangToggle big />
+      </div>
 
       {children.length > 1 && (
         <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 14 }}>
