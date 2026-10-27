@@ -534,6 +534,18 @@ export default function Club() {
     loadParentsData(clubId);
   }, [clubId, parentsRaw, loadParentsData]);
 
+  const loadRequests = useCallback(async (cid) => {
+    try {
+      const { data, error } = await supabase.schema('yps').rpc('club_requests_for_admin', { p_club: cid });
+      if (error) throw error;
+      setReqFailed(false);
+      setReqRaw(Array.isArray(data) ? data.filter((r) => r && r.id) : []);
+    } catch (e) {
+      console.error('club_requests_for_admin', e && e.code);
+      setReqFailed(true); setReqRaw([]);
+    }
+  }, []);
+
   /* Les demandes aussi : le compteur « à traiter » du menu en dépend. */
   useEffect(() => {
     if (!clubId || reqRaw !== null) return;
@@ -841,13 +853,6 @@ export default function Club() {
   }
 
   /* ---------- onglet Messages : demandes des parents et coachs au club ---------- */
-
-  const loadRequests = useCallback(async (cid) => {
-    const { data, error } = await supabase.schema('yps').rpc('club_requests_for_admin', { p_club: cid });
-    if (error) { console.error('club_requests_for_admin', error.code); setReqFailed(true); setReqRaw([]); return; }
-    setReqFailed(false);
-    setReqRaw(Array.isArray(data) ? data : []);
-  }, []);
 
   async function replyRequest(id) {
     const text = (reqReply[id] || '').trim();
