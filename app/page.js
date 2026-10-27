@@ -416,6 +416,7 @@ export default function Home() {
   return (
     <div className="wrap" style={{ paddingBottom: BOTTOM_NAV_HEIGHT + 24 }}>
       <PilotBanner compact style={{ marginTop: 4 }} />
+      {!(player && !isAthlete) && (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
         {headClub ? (
           /* Le club en évidence ; YouPlaySport reste en filigrane. */
@@ -443,6 +444,7 @@ export default function Home() {
           <a href="#" onClick={(e) => { e.preventDefault(); logout(); }} style={{ fontSize: 13, fontWeight: 700 }}>{t('common.logout')}</a>
         </div>
       </div>
+      )}
 
       {err && <div className="error">{err}</div>}
 
@@ -450,7 +452,10 @@ export default function Home() {
       {player && !isAthlete && (
         <ParentJournal
           todayLabel={todayLabel}
-          userName={userName} roleLine={roleLine}
+          userName={userName}
+          headClub={headClub}
+          onProfile={() => router.push('/profil')}
+          onLogout={logout}
           kids={children}
           player={player}
           onRespond={respondParent} respondBusy={parentRsvpBusy} respondErr={parentRsvpErr}
@@ -463,7 +468,6 @@ export default function Home() {
           nextEvent={nextEvent}
           convocation={convocation}
           onSwitchChild={switchChild}
-          onAlerts={() => router.push('/alertes')}
           onAdd={() => router.push('/ajouter')}
           onCarnet={() => router.push('/carnet')}
           onAgenda={() => router.push('/agenda')}

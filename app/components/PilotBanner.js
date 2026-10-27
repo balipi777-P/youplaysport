@@ -20,10 +20,11 @@ export default function PilotBanner({ style, compact = false }) {
         color: '#3D3A33', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8, minHeight: 44, ...style }}>
         <span aria-hidden="true" style={{ flex: '0 0 18px', width: 18, height: 18, borderRadius: 999, border: '1.5px solid #3D3A33',
           fontSize: 11, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>i</span>
-        <a href="/confidentialite" onClick={go('/confidentialite')}
-          style={{ flex: 1, minWidth: 0, color: 'inherit', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {t('pilot.title')}
-        </a>
+        <span style={{ flex: 1, minWidth: 0, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {t('pilot.short')}
+        </span>
+        <a href="/confidentialite" onClick={go('/confidentialite')} style={{ flex: '0 0 auto', whiteSpace: 'nowrap', minHeight: 44, display: 'inline-flex', alignItems: 'center' }}>{t('pilot.privacy')}</a>
+        <a href="/cgu" onClick={go('/cgu')} style={{ flex: '0 0 auto', whiteSpace: 'nowrap', minHeight: 44, display: 'inline-flex', alignItems: 'center' }}>{t('pilot.terms')}</a>
         <button type="button" aria-label={t('pilot.close')} onClick={() => { compactDismissed = true; setHidden(true); }}
           style={{ flex: '0 0 44px', width: 44, height: 44, border: 'none', background: 'transparent', cursor: 'pointer',
             fontSize: 20, lineHeight: 1, color: '#3D3A33', fontFamily: 'inherit' }}>×</button>

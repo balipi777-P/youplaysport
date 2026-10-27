@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Icon from './Icon';
 import Accordion from './Accordion';
-import { useT } from '../../lib/i18n';
+import { useT, LangToggle } from '../../lib/i18n';
+import ClubAvatar from './ClubAvatar';
 import { firstNameOf, initialsOfName } from '../../lib/userName';
 import EventNotes from './EventNotes';
 
@@ -57,15 +58,28 @@ function dayLong(value, lang) {
   } catch { return ''; }
 }
 
+const menuItem = { display: 'block', width: '100%', minHeight: 44, textAlign: 'left', padding: '0 12px', border: 'none',
+  background: 'transparent', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, color: 'var(--ink)', cursor: 'pointer', borderRadius: 10 };
+
 export default function ParentJournal({
-  todayLabel, userName, roleLine, kids, player, clubCount,
+  todayLabel, userName, kids, player, clubCount,
   session, attendance, attendanceAt, sessionSkills, streak,
   nextEvent, convocation,
-  onSwitchChild, onAlerts, onAdd, onCarnet, onAgenda, onClub, onReadReply,
+  headClub, onProfile, onLogout,
+  onSwitchChild, onAdd, onCarnet, onAgenda, onClub, onReadReply,
   clubUnread = { count: 0, latest: null },
   onRespond, respondBusy, respondErr,
 }) {
   const { t, lang } = useT();
+  const [menu, setMenu] = useState(false);
+  const menuRef = useRef(null);
+  useEffect(() => {
+    if (!menu) return undefined;
+    const off = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenu(false); };
+    const esc = (e) => { if (e.key === 'Escape') setMenu(false); };
+    document.addEventListener('mousedown', off); document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', off); document.removeEventListener('keydown', esc); };
+  }, [menu]);
   /* Une seule section ouverte à la fois ; le compte rendu l'est au départ. */
   const [openKey, setOpenKey] = useState('report');
   const toggle = (k) => setOpenKey((cur) => (cur === k ? null : k));
@@ -81,7 +95,6 @@ export default function ParentJournal({
   /* Décomptes réels : enfants rattachés au compte, clubs distincts parmi eux. */
   const childLabel = t(kids.length === 1 ? 'journal.childCount' : 'journal.childCountMany', { n: kids.length });
   const clubLabel = t(clubCount === 1 ? 'journal.clubCount' : 'journal.clubCountMany', { n: clubCount });
-  const subtitle = [roleLine, `${childLabel}, ${clubLabel}`].filter(Boolean).join(' · ');
 
   const initials = (c) => `${(c.first_name || '')[0] || ''}${(c.last_name || '')[0] || ''}`.toUpperCase();
   const sportName = (sp) => (lang === 'en' ? sp?.name_en || sp?.name_fr : sp?.name_fr) || '';
@@ -145,36 +158,52 @@ export default function ParentJournal({
         </div>
       )}
 
-      {/* ---- En-tête : le jour, le titre, la portée du compte ---- */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ color: 'var(--muted)', fontSize: 10.5, fontWeight: 800, letterSpacing: '.9px' }}>
-            {todayLabel}
-          </div>
-          <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.4px', margin: '3px 0 4px' }}>
-            {userName ? t('hello.name', { name: firstNameOf(userName) }) : t('home.todayTitle')}
-          </h1>
-          <div style={{ fontSize: 12.5, color: 'var(--muted)', fontWeight: 600 }}>{subtitle}</div>
+      {/* ---- En-tête : club en petit à gauche, avatar + menu à droite ---- */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+          {headClub ? (
+            <>
+              <ClubAvatar name={headClub.name} logoUrl={headClub.logo_url} color={headClub.accent_color || 'var(--brand)'}
+                size={30} radius={10} fontSize={12} />
+              <span className="q" style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {headClub.name}
+              </span>
+            </>
+          ) : (
+            <span className="q" style={{ fontWeight: 700, fontSize: 15 }}>You<span style={{ color: 'var(--brand)' }}>Play</span>Sport</span>
+          )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '0 0 auto' }}>
-        {userName && (
-          <span className="q" aria-hidden="true" style={{ width: 40, height: 40, borderRadius: 14,
-            background: 'var(--peach)', color: 'var(--brand-dark)', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>{initialsOfName(userName)}</span>
-        )}
-        <button type="button" onClick={onAlerts}
-          style={{ flex: '0 0 auto', minHeight: 44, border: '1px solid var(--border)', background: '#fff', borderRadius: 999,
-            padding: '8px 13px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
-            color: 'var(--brand-dark)' }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Icon name="bell" size={15} />{t('nav.alerts')}
-          </span>
-        </button>
+        <div ref={menuRef} style={{ position: 'relative', flex: '0 0 auto' }}>
+          <button type="button" className="q" onClick={() => setMenu((v) => !v)} aria-haspopup="menu" aria-expanded={menu}
+            aria-label={t('journal.menuAria')}
+            style={{ width: 44, height: 44, borderRadius: 14, border: 'none', background: 'var(--peach)', color: 'var(--brand-dark)',
+              fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>
+            {userName ? initialsOfName(userName) : <Icon name="user" size={18} />}
+          </button>
+          {menu && (
+            <div role="menu" style={{ position: 'absolute', right: 0, top: 50, zIndex: 30, minWidth: 190, background: '#fff',
+              border: '1px solid var(--border)', borderRadius: 14, boxShadow: '0 8px 22px rgba(28,26,23,0.12)', padding: 6 }}>
+              <button type="button" role="menuitem" onClick={() => { setMenu(false); onProfile(); }} style={menuItem}>{t('nav.myProfile')}</button>
+              <div style={{ ...menuItem, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'default' }}>
+                <span>{t('journal.menuLang')}</span><LangToggle />
+              </div>
+              <button type="button" role="menuitem" onClick={() => { setMenu(false); onLogout(); }} style={menuItem}>{t('common.logout')}</button>
+            </div>
+          )}
         </div>
       </div>
 
+      {/* ---- Date en petit, puis le titre ---- */}
+      <div style={{ color: 'var(--muted)', fontSize: 10.5, fontWeight: 800, letterSpacing: '.9px' }}>{todayLabel}</div>
+      <h1 className="q" style={{ fontSize: 24, letterSpacing: '-0.4px', margin: '3px 0 6px' }}>
+        {userName ? t('hello.name', { name: firstNameOf(userName) }) : t('home.todayTitle')}
+      </h1>
+      {(kids.length > 1 || clubCount > 1) && (
+        <div style={{ fontSize: 12.5, color: 'var(--muted)', fontWeight: 600 }}>{`${childLabel}, ${clubLabel}`}</div>
+      )}
+
       {/* ---- Pastilles enfants : une par rattachement, plus l'accès à l'ajout ---- */}
-      <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', margin: '16px 0 8px' }}>
+      <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', margin: '20px 0 16px' }}>
         {kids.map((c) => {
           const on = c.id === player.id;
           const sp = c.teams?.sports;
@@ -202,7 +231,7 @@ export default function ParentJournal({
                 </span>
                 <span style={{ display: 'block', fontSize: 9.5, fontWeight: 800, letterSpacing: '.5px',
                   textTransform: 'uppercase', opacity: .85, marginTop: 2 }}>
-                  {[c.teams?.clubs?.name, c.teams?.name, sportName(sp)].filter(Boolean).join(' · ')}
+                  {[clubCount > 1 ? c.teams?.clubs?.name : '', c.teams?.name, sportName(sp)].filter(Boolean).join(' · ')}
                 </span>
               </span>
             </button>
