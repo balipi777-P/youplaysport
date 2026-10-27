@@ -814,6 +814,9 @@ export default function Club() {
       padding: 20px 16px 22px; position: sticky; top: 0; height: 100vh; overflow-y: auto;
       display: flex; flex-direction: column; gap: 16px; }
     .cons-main { flex: 1; min-width: 0; padding: 28px 32px 64px; max-width: 1240px; }
+    .cons-main, .cons-main > *, .cons-main .card { min-width: 0; max-width: 100%; }
+    .cons-main .input { max-width: 100%; min-width: 0; }
+    .cons-main { overflow-wrap: anywhere; }
     .cons-burger { display: none; }
     .cons-backdrop { display: none; }
     .cons-fold { flex: 1; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
@@ -824,7 +827,8 @@ export default function Club() {
       gap: 8px; align-items: center; }
     @media (max-width: 1080px) { .cons-grid { grid-template-columns: 1fr; } }
     @media (max-width: 900px) {
-      .cons { display: block; }
+      .cons { display: block; width: 100%; max-width: 100%; }
+      .cons-main { width: 100%; }
       .cons-side { position: sticky; top: 0; z-index: 30; width: auto; height: auto; flex: none;
         border-right: none; border-bottom: 1px solid var(--border); padding: 10px 16px; background: #fff; }
       .cons-side[data-open="true"] { z-index: 70; }
@@ -1170,8 +1174,8 @@ export default function Club() {
       <>
       {pillTitle(rowTitle)}
       <div role="group" aria-label={groupLabel}
-        style={{ display: 'flex', gap: 7, overflowX: 'auto', whiteSpace: 'nowrap',
-          paddingBottom: 4, WebkitOverflowScrolling: 'touch' }}>
+        style={{ display: 'flex', flexWrap: 'nowrap', gap: 7, overflowX: 'auto', whiteSpace: 'nowrap',
+          minWidth: 0, maxWidth: '100%', paddingBottom: 4, WebkitOverflowScrolling: 'touch' }}>
         {[{ id: '', name: allLabel, n: null }, ...teams.map((tm) => ({ id: tm.id, name: tm.name, n: countOf(tm.id) }))]
           .map((pill) => (
             <button key={pill.id || 'all'} type="button" aria-pressed={pickedId === pill.id}
@@ -1483,7 +1487,7 @@ export default function Club() {
                     </div>
 
                     {/* ---- Encarts de droite ---- */}
-                    <div style={{ display: 'grid', gap: 14 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 14, minWidth: 0, maxWidth: '100%' }}>
                       {panel(head.coaches.length > 3
                         ? foldHead(`co:${tm.id}`, t('club.coachesN', { n: head.coaches.length }), !!folded[`co:${tm.id}`])
                         : t('club.coaches'), (
@@ -1752,14 +1756,14 @@ export default function Club() {
         {sectionHead('adm.nav.parents')}
         {parentsRaw === null && <div className="card" style={{ fontSize: 13, color: 'var(--muted)' }}>{t('common.loading')}</div>}
         {parentsRaw !== null && (
-          <div style={{ display: 'grid', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 14, minWidth: 0, maxWidth: '100%' }}>
             {parentsFailed && <div className="error">{t('par.errLoad')}</div>}
 
             <div className="card" style={{ marginBottom: 0 }}>
               <input className="input" value={parentQuery} placeholder={t('par.search')}
                 onChange={(e) => setParentQuery(e.target.value)} />
               {pillTitle(t('par.statusTitle'))}
-              <div style={{ display: 'flex', gap: 7, overflowX: 'auto', whiteSpace: 'nowrap', paddingBottom: 4 }}>
+              <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 7, overflowX: 'auto', whiteSpace: 'nowrap', minWidth: 0, maxWidth: '100%', paddingBottom: 4, WebkitOverflowScrolling: 'touch' }}>
                 {filterBtn('all', t('par.fAll'))}
                 {filterBtn('pending', t('par.fPending', { n: pendingParents.length }))}
                 {filterBtn('orphans', t('par.fOrphans', { n: orphansInTeam.length }))}
@@ -1891,7 +1895,7 @@ export default function Club() {
 
         <div className="cons-grid">
           {/* ============ Colonne principale ============ */}
-          <div style={{ display: 'grid', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 14, minWidth: 0, maxWidth: '100%' }}>
             {csvCard()}
 
             <div className="cons-two">
@@ -1963,7 +1967,7 @@ export default function Club() {
           </div>
 
           {/* ============ Colonne latérale ============ */}
-          <div style={{ display: 'grid', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 14, minWidth: 0, maxWidth: '100%' }}>
             {pendingCard()}
             {brandingCard()}
             {documentsCard()}
