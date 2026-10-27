@@ -4,10 +4,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
 import { fetchMySpaces } from '../../lib/spaces';
+import Fold from './Fold';
 import { requestError, requestStatus, MAX_SUBJECT, MAX_BODY } from '../../lib/clubRequests';
 
 /**
- * Bloc « Contacter mon club » + « Mes demandes » de la page Mon profil.
+ * Section pliable « Contacter mon club » (formulaire + « Mes demandes ») de la page Mon profil ;
+ * la pastille du titre compte les demandes non clôturées.
  * Réservé aux parents et aux coachs : un athlète (compte autonome, mineur) et un
  * dirigeant (destinataire des demandes) ne voient rien.
  */
@@ -82,10 +84,11 @@ export default function ContactClub() {
     loadMine();
   }
 
+  const openCount = (mine || []).filter((r) => r.status !== 'closed').length;
+
   return (
-    <>
-      <div className="card" style={{ minWidth: 0 }}>
-        <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>{t('ctc.title')}</div>
+    <Fold title={t('ctc.title')} badge={openCount > 0 ? openCount : null}>
+      <div style={{ minWidth: 0 }}>
         <p style={{ fontSize: 13, color: '#5A554B', lineHeight: 1.55, margin: '0 0 12px' }}>{t('ctc.intro')}</p>
 
         {clubs.length > 1 && (
@@ -111,7 +114,7 @@ export default function ContactClub() {
       </div>
 
       {mine && mine.length > 0 && (
-        <div className="card" style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, marginTop: 18, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
           <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{t('ctc.mine')}</div>
           {mine.map((r, i) => {
             const st = requestStatus(r.status);
@@ -165,6 +168,6 @@ export default function ContactClub() {
           })}
         </div>
       )}
-    </>
+    </Fold>
   );
 }

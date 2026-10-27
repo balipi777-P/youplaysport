@@ -12,7 +12,6 @@ import ClubAvatar from './components/ClubAvatar';
 import { NAME_EVENT, fetchMyName } from '../lib/userName';
 import ParentJournal from './components/ParentJournal';
 import { withNotes } from '../lib/eventNotes';
-import { exportChildData } from '../lib/exports';
 import AthleteToday from './components/AthleteToday';
 import CoachGroups from './components/CoachGroups';
 import PendingLinks from './components/PendingLinks';
@@ -452,7 +451,6 @@ export default function Home() {
           kids={children}
           player={player}
           onRespond={respondParent} respondBusy={parentRsvpBusy} respondErr={parentRsvpErr}
-          onExportChild={async () => { try { await exportChildData(player); } catch (e) { console.error('[export_child_data]', e); alert(t('exp.childErr')); } }}
           clubCount={clubCount}
           session={session}
           attendance={attendance}

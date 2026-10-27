@@ -61,10 +61,9 @@ export default function ParentJournal({
   todayLabel, userName, roleLine, kids, player, clubCount,
   session, attendance, attendanceAt, sessionSkills, streak,
   nextEvent, convocation,
-  onSwitchChild, onAlerts, onAdd, onCarnet, onAgenda, onExportChild,
+  onSwitchChild, onAlerts, onAdd, onCarnet, onAgenda,
   onRespond, respondBusy, respondErr,
 }) {
-  const [exporting, setExporting] = useState(false);
   const { t, lang } = useT();
   /* Une seule section ouverte à la fois ; le compte rendu l'est au départ. */
   const [openKey, setOpenKey] = useState('report');
@@ -203,16 +202,6 @@ export default function ParentJournal({
       <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 14 }}>
         {`${childLabel}, ${clubLabel}, ${t('journal.scopeTail')}`}
       </div>
-
-      {player && onExportChild && (
-        <div style={{ marginBottom: 16 }}>
-          <button type="button" className="btn ghost" style={{ marginBottom: 4 }} disabled={exporting}
-            onClick={async () => { setExporting(true); try { await onExportChild(); } finally { setExporting(false); } }}>
-            {exporting ? '…' : t('exp.child')}
-          </button>
-          <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>{t('exp.childHint')}</div>
-        </div>
-      )}
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <button className="btn ghost" style={{ marginBottom: 0 }} onClick={onCarnet}>

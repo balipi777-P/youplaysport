@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { loadMyChildren, pickChild, setStoredChildId } from '../../lib/children';
 import { useT } from '../../lib/i18n';
+import Fold from '../components/Fold';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 
 /* Fiche athlète d'un enfant, pour un seul club à la fois : celui de son groupe.
@@ -294,15 +295,7 @@ export default function Profil() {
       </div>
 
       {/* ---- Carnet de compétences ---- */}
-      <div className="card">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-          <div className="q" style={{ fontWeight: 800, fontSize: 15 }}>{t('profile.skills')}</div>
-          <span style={{ background: '#EDF4E8', color: '#3E5A3E', border: '1px solid #DCE8D4',
-            borderRadius: 999, padding: '4px 10px', fontSize: 10.5, fontWeight: 800, whiteSpace: 'nowrap' }}>
-            {t(seasonKey, { n: seasonCount })}
-          </span>
-        </div>
-
+      <Fold title={t('profile.skills')} summary={t(seasonKey, { n: seasonCount })} defaultOpen>
         {ordered.length === 0 && (
           <p style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, margin: '12px 0 0' }}>
             {t('profile.skillsEmpty')}
@@ -331,22 +324,11 @@ export default function Profil() {
         <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.55, marginTop: 16 }}>
           {t('profile.skillsFoot')}
         </div>
-      </div>
+      </Fold>
 
       {/* ---- Présences du mois ---- */}
-      <div className="card">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-          <div className="q" style={{ fontWeight: 800, fontSize: 15 }}>
-            {t('profile.attendance', { month: monthLabel })}
-          </div>
-          {monthCount.total > 0 && (
-            <span style={{ background: 'var(--peach)', color: '#5F2A1C', borderRadius: 999,
-              padding: '4px 10px', fontSize: 10.5, fontWeight: 800, whiteSpace: 'nowrap' }}>
-              {t(countKey, { n: monthCount.done, total: monthCount.total })}
-            </span>
-          )}
-        </div>
-
+      <Fold title={t('profile.attendance', { month: monthLabel })}
+        summary={monthCount.total > 0 ? t(countKey, { n: monthCount.done, total: monthCount.total }) : null}>
         {/* Navigation de mois : sans elle, un mois sans séance serait une impasse. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
           {[[-1, 'profile.prevMonth', '‹'], [1, 'profile.nextMonth', '›']].map(([step, key, glyph]) => (
@@ -398,14 +380,11 @@ export default function Profil() {
             {t('profile.noSessions')}
           </div>
         )}
-      </div>
+      </Fold>
 
       {/* ---- Jalons de progrès. Le schéma ne stocke pas de jalon : ce sont les
              compétences validées, avec la séance où elles l'ont été. ---- */}
-      <div className="card">
-        <div className="q" style={{ fontWeight: 800, fontSize: 15, marginBottom: 12 }}>
-          {t('profile.milestones')}
-        </div>
+      <Fold title={t('profile.milestones')}>
         {milestones.length === 0 && (
           <p style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6, margin: 0 }}>
             {t('profile.milestonesEmpty')}
@@ -423,7 +402,7 @@ export default function Profil() {
             </div>
           </div>
         ))}
-      </div>
+      </Fold>
 
       <div className="card">
         <a href="#" onClick={(e) => { e.preventDefault(); router.push('/mes-donnees'); }}

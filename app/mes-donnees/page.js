@@ -5,9 +5,9 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
 import { clearSpaceStorage } from '../../lib/spaces';
-import { exportChildData } from '../../lib/exports';
 import { loadMyChildren } from '../../lib/children';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
+import Fold from '../components/Fold';
 import ContactClub from '../components/ContactClub';
 
 const DANGER = '#C0392B';
@@ -42,8 +42,6 @@ export default function MesDonnees() {
         name: au?.full_name || '', email: data.session.user.email || '',
         roles: roles.length ? roles : (kids.length ? ['parent'] : []), clubs, teams,
         kids: kids.filter((k) => k.user_id !== uid), isAthlete: own.length > 0,
-        isParent: (roles.includes('parent') || kids.some((k) => k.user_id !== uid))
-          && !roles.includes('coach') && !roles.includes('admin') && own.length === 0,
       });
       setReady(true);
     })();
@@ -91,13 +89,6 @@ export default function MesDonnees() {
     } finally { setBusy(''); }
   }
 
-  async function exportKid(kid) {
-    setBusy(`kid-${kid.id}`); setErr(''); setMsg('');
-    try { await exportChildData(kid); setMsg(t('mydata.exported')); }
-    catch (e) { console.error('export_child_data', e); setErr(t('exp.childErr')); }
-    finally { setBusy(''); }
-  }
-
   if (!ready) return <div className="wrap"><p style={{ color: 'var(--muted)' }}>{t('common.loading')}</p></div>;
 
   const roles = me?.roles || [];
@@ -105,6 +96,7 @@ export default function MesDonnees() {
     .map((r) => t(`role.${r}`)).join(', ');
   const navRole = roles.includes('admin') ? 'admin' : roles.includes('coach') ? 'coach'
     : me?.isAthlete ? 'athlete' : 'parent';
+  const dangerKey = roles.includes('admin') ? 'mydata.dangerD' : 'mydata.dangerMember';
   const erased = [
     t('mydata.erase.account'),
     ...(roles.includes('parent') ? [t('mydata.erase.kids')] : []),
@@ -125,7 +117,7 @@ export default function MesDonnees() {
         <ul style={{ fontSize: 13.5, lineHeight: 1.6, margin: '0 0 12px', paddingLeft: 20 }}>
           {erased.map((x) => <li key={x}>{x}</li>)}
         </ul>
-        <p style={{ fontSize: 13, color: '#5A554B', lineHeight: 1.55, margin: '0 0 14px' }}>{t('mydata.dangerD')}</p>
+        <p style={{ fontSize: 13, color: '#5A554B', lineHeight: 1.55, margin: '0 0 14px' }}>{t(dangerKey)}</p>
         <label style={{ display: 'block', fontSize: 13.5, lineHeight: 1.5, marginBottom: 14 }}>
           <span style={{ display: 'block', marginBottom: 6 }}>{t('mydata.typeLabel')}</span>
           <input value={word} onChange={(e) => setWord(e.target.value)} autoCapitalize="characters"
@@ -151,7 +143,7 @@ export default function MesDonnees() {
         <div className="q" style={{ fontWeight: 700, fontSize: 18 }}>{t('mydata.title')}</div>
       </div>
 
-      <div className="card">
+      <Fold title={t('mydata.identity')} defaultOpen>
         {[[t('mydata.name'), me?.name || '—'], [t('mydata.email'), me?.email || '—'],
           [t('mydata.role'), roleLabel || '—'], [t('mydata.club'), (me?.clubs || []).join(', ') || '—']].map(([k, v]) => (
           <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '6px 0', fontSize: 14 }}>
@@ -159,11 +151,10 @@ export default function MesDonnees() {
             <span style={{ fontWeight: 700, textAlign: 'right', overflowWrap: 'anywhere' }}>{v}</span>
           </div>
         ))}
-      </div>
+      </Fold>
 
       {me?.kids.length > 0 && (
-        <div className="card">
-          <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{t('mydata.kids')}</div>
+        <Fold title={t('mydata.kids')} defaultOpen>
           {me.kids.map((k) => (
             <div key={k.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0' }}>
               <div style={{ flex: 1, minWidth: 0, fontSize: 14 }}>
@@ -172,13 +163,9 @@ export default function MesDonnees() {
                   {[k.teams?.clubs?.name, k.teams?.name].filter(Boolean).join(' · ')}
                 </div>
               </div>
-              <button type="button" className="btn ghost" style={{ width: 'auto', padding: '8px 12px', fontSize: 13, marginBottom: 0 }}
-                disabled={busy !== ''} onClick={() => exportKid(k)}>
-                {busy === `kid-${k.id}` ? '…' : t('mydata.kidExport')}
-              </button>
             </div>
           ))}
-        </div>
+        </Fold>
       )}
 
       {me?.teams.length > 0 && (
@@ -195,7 +182,7 @@ export default function MesDonnees() {
 
       <ContactClub />
 
-      {me?.isParent && (
+      {me?.roles.includes('admin') && (
         <div className="card">
           <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>{t('mydata.exportT')}</div>
           <p style={{ fontSize: 13, color: '#5A554B', lineHeight: 1.55, margin: '0 0 14px' }}>{t('mydata.exportD')}</p>
@@ -206,15 +193,14 @@ export default function MesDonnees() {
         </div>
       )}
 
-      <div className="card" style={{ border: `1.5px solid ${DANGER}` }}>
-        <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 6, color: DANGER }}>{t('mydata.dangerT')}</div>
-        <p style={{ fontSize: 13, color: '#5A554B', lineHeight: 1.55, margin: '0 0 14px' }}>{t('mydata.dangerD')}</p>
+      <Fold title={t('mydata.dangerT')} danger={DANGER}>
+        <p style={{ fontSize: 13, color: '#5A554B', lineHeight: 1.55, margin: '0 0 14px' }}>{t(dangerKey)}</p>
         <button type="button" className="btn" onClick={() => { setConfirming(true); setErr(''); setWord(''); }}
           style={{ background: 'transparent', color: DANGER, border: `1.5px solid ${DANGER}` }}>
           {t('mydata.deleteCta')}
         </button>
         {err && <div className="error" role="alert" style={{ marginTop: 12 }}>{err}</div>}
-      </div>
+      </Fold>
       <BottomNav role={navRole} />
     </div>
   );
