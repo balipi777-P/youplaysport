@@ -191,6 +191,8 @@ export default function Club() {
   const [parentsFailed, setParentsFailed] = useState(false);
   const [parentQuery, setParentQuery] = useState('');
   const [parentFilter, setParentFilter] = useState('all'); // all | pending | orphans
+  const [athGroup, setAthGroup] = useState('');         // filtre groupe de l'onglet Athlètes ('' = tous)
+  const [athSortDir, setAthSortDir] = useState('');     // tri par groupe : '' | 'asc' | 'desc'
   const [parentTeam, setParentTeam] = useState('');     // filtre équipe de l'onglet Parents ('' = toutes) ; vit au niveau Club pour survivre au changement d'onglet
   const [parentAsk, setParentAsk] = useState(null);       // {linkId, kind: 'reject' | 'detach'}
   const [parentBusy, setParentBusy] = useState('');
@@ -954,7 +956,19 @@ export default function Club() {
   const athleteHeader = (withGroup) => (
     <div className="cons-row cons-th" style={{ padding: '0 0 8px' }}>
       <div className="label">{t('club.athlete')}</div>
-      <div className="label">{withGroup ? t('adm.group') : t('club.parentAccount')}</div>
+      {withGroup ? (
+        <button type="button" onClick={() => setAthSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+          aria-label={t('ath.sortGroup')}
+          style={{ border: 'none', background: 'transparent', padding: 0, font: 'inherit', cursor: 'pointer',
+            textAlign: 'left', color: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span className="label" style={{ margin: 0 }}>{t('adm.group')}</span>
+          <span aria-hidden="true" style={{ fontSize: 10, color: athSortDir ? 'var(--brand)' : 'var(--muted)' }}>
+            {athSortDir === 'desc' ? '▼' : athSortDir === 'asc' ? '▲' : '↕'}
+          </span>
+        </button>
+      ) : (
+        <div className="label">{t('club.parentAccount')}</div>
+      )}
       <div className="label">{t('club.status')}</div>
       <div className="label" style={{ textAlign: 'right' }}>{t('club.attendance')}</div>
     </div>
@@ -1137,6 +1151,29 @@ export default function Club() {
       <span className="label" style={{ margin: 0 }}>{label}</span>
       <span style={{ color: 'var(--muted)', display: 'inline-flex' }}>{chevron(folded0)}</span>
     </button>
+  );
+
+  /**
+   * Rangée de pastilles « équipe » défilable horizontalement, commune aux onglets
+   * Athlètes et Parents. countOf(teamId) rend le nombre affiché, ou null pour aucun.
+   */
+  const teamPillRow = (pickedId, onPick, allLabel, countOf, groupLabel) => (
+    teams.length > 0 && (
+      <div role="group" aria-label={groupLabel}
+        style={{ display: 'flex', gap: 7, marginTop: 10, overflowX: 'auto', whiteSpace: 'nowrap',
+          paddingBottom: 4, WebkitOverflowScrolling: 'touch' }}>
+        {[{ id: '', name: allLabel, n: null }, ...teams.map((tm) => ({ id: tm.id, name: tm.name, n: countOf(tm.id) }))]
+          .map((pill) => (
+            <button key={pill.id || 'all'} type="button" aria-pressed={pickedId === pill.id}
+              onClick={() => onPick(pill.id)}
+              style={{ flex: '0 0 auto', border: pickedId === pill.id ? '1.5px solid var(--brand)' : '1.5px solid var(--border)',
+                background: pickedId === pill.id ? 'var(--peach)' : '#fff', color: 'var(--ink)', borderRadius: 20,
+                padding: '7px 13px', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+              {pill.name}{pill.n !== null && pill.n !== undefined ? ` (${pill.n})` : ''}
+            </button>
+          ))}
+      </div>
+    )
   );
 
   const panel = (title, children) => (
@@ -1511,6 +1548,13 @@ export default function Club() {
   }
 
   function AthletesSection() {
+    /* Groupe choisi ('' = tous) ; un groupe disparu depuis redevient « tous ». */
+    const athPick = teams.some((tm) => tm.id === athGroup) ? athGroup : '';
+    const athLabelOf = (a) => (teamById[a.teamId]?.name || '');
+    const athFiltered = (everyone || []).filter((a) => !athPick || a.teamId === athPick);
+    const athShown = athSortDir
+      ? [...athFiltered].sort((a, b) => athLabelOf(a).localeCompare(athLabelOf(b)) * (athSortDir === 'desc' ? -1 : 1))
+      : athFiltered;
     return (
       <>
         {sectionHead('adm.nav.athletes')}
@@ -1521,8 +1565,13 @@ export default function Club() {
           )}
           {everyone !== null && everyone.length > 0 && (
             <>
-              {athleteHeader(true)}
-              {everyone.map((a) => athleteRow(a, true))}
+              <div className="label" style={{ marginBottom: 2 }}>{t('club.athletesN', { n: athShown.length })}</div>
+              {teamPillRow(athPick, setAthGroup, t('ath.allGroups'),
+                (tid) => everyone.filter((a) => a.teamId === tid).length, t('ath.groupFilter'))}
+              <div style={{ height: 12 }} />
+              {athShown.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('ath.emptyGroup')}</div>}
+              {athShown.length > 0 && athleteHeader(true)}
+              {athShown.map((a) => athleteRow(a, true))}
             </>
           )}
         </div>
@@ -1707,22 +1756,7 @@ export default function Club() {
                 {filterBtn('pending', t('par.fPending', { n: pendingParents.length }))}
                 {filterBtn('orphans', t('par.fOrphans', { n: orphansInTeam.length }))}
               </div>
-              {teams.length > 0 && (
-                <div role="group" aria-label={t('par.teamFilter')}
-                  style={{ display: 'flex', gap: 7, marginTop: 10, overflowX: 'auto', whiteSpace: 'nowrap',
-                    paddingBottom: 4, WebkitOverflowScrolling: 'touch' }}>
-                  {[{ id: '', name: t('par.allTeams'), n: null }, ...teams.map((tm) => ({ id: tm.id, name: tm.name, n: teamParentCount(tm.id) }))]
-                    .map((pill) => (
-                      <button key={pill.id || 'all'} type="button" aria-pressed={teamPick === pill.id}
-                        onClick={() => setParentTeam(pill.id)}
-                        style={{ flex: '0 0 auto', border: teamPick === pill.id ? '1.5px solid var(--brand)' : '1.5px solid var(--border)',
-                          background: teamPick === pill.id ? 'var(--peach)' : '#fff', color: 'var(--ink)', borderRadius: 20,
-                          padding: '7px 13px', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
-                        {pill.name}{pill.n !== null ? ` · ${pill.n}` : ''}
-                      </button>
-                    ))}
-                </div>
-              )}
+              {teamPillRow(teamPick, setParentTeam, t('par.allTeams'), teamParentCount, t('par.teamFilter'))}
             </div>
 
             {showOrphanBlock && (
