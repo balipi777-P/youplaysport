@@ -7,6 +7,7 @@ import { useT, LangToggle } from '../../lib/i18n';
 import ClubAvatar from './ClubAvatar';
 import { firstNameOf, initialsOfName } from '../../lib/userName';
 import EventNotes from './EventNotes';
+import { ParentCarpool } from './Carpool';
 
 /* Vue « Journée sportive » du parent. Composant purement présentatif : toutes les
    données arrivent en props depuis l'accueil, qui reste seul à parler à Supabase.
@@ -478,6 +479,7 @@ export default function ParentJournal({
               ? t('journal.answered', { answer: t(convocation.response === 'present' ? 'journal.present' : 'journal.absent') })
               : t('journal.noAnswer')}
           </div>
+          <ParentCarpool eventId={nextEvent.id} refreshKey={`${convocation?.response || ''}`} />
         </div>
       )}
     </div>

@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
 import { getStored, KEY_TEAM } from '../../lib/spaces';
 import { NOTES_MAX, withNotes } from '../../lib/eventNotes';
+import { StaffCarpool, CARPOOL_TYPES, carpoolErrKey } from '../components/Carpool';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 
 /* Écran Événements du coach : poser un match et convoquer le groupe.
@@ -58,6 +59,11 @@ export default function Evenements() {
   const [time, setTime] = useState('');
   const [deadline, setDeadline] = useState('');
   const [notes, setNotes] = useState('');
+  const [carpool, setCarpool] = useState(false);
+  const [carpoolAsk, setCarpoolAsk] = useState(false); // confirmation avant de couper le covoiturage
+  const [carpoolCount, setCarpoolCount] = useState(0); // choix déjà saisis par les familles
+  const [carpoolKey, setCarpoolKey] = useState(0);
+  const [carpoolBusy, setCarpoolBusy] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
@@ -123,7 +129,7 @@ export default function Evenements() {
     setSel(new Set(ids)); // par défaut : tout le groupe est convoqué
 
     const { data: evs } = await withNotes((wn) => supabase.from('events')
-      .select(`id, type, datetime, place, opponent, rsvp_deadline${wn ? ', notes' : ''}`)
+      .select(`id, type, datetime, place, opponent, rsvp_deadline, carpool${wn ? ', notes' : ''}`)
       .eq('team_id', tid).order('datetime', { ascending: true }));
     setEvents(evs || []);
     if (wantedEvent.current) {
@@ -132,7 +138,7 @@ export default function Evenements() {
     }
   }, []);
 
-  useEffect(() => { setEventId(''); loadTeam(teamId); }, [teamId, loadTeam]);
+  useEffect(() => { setEventId(''); setCarpool(false); setCarpoolAsk(false); loadTeam(teamId); }, [teamId, loadTeam]);
 
   /* Réponses réelles de l'événement affiché. Un événement qui n'existe pas
      encore n'a aucune ligne : tout le monde est en attente. */
@@ -155,7 +161,9 @@ export default function Evenements() {
   function pickEvent(id) {
     setEventId(id);
     setErr('');
+    setCarpoolAsk(false); setCarpoolCount(0);
     const ev = events.find((e) => e.id === id);
+    setCarpool(Boolean(ev?.carpool));
     if (!ev) { setOpponent(''); setPlace(''); setDate(''); setTime(''); setDeadline(''); setNotes(''); return; }
     setType(ev.type);
     setOpponent(ev.opponent || '');
@@ -215,6 +223,27 @@ export default function Evenements() {
     } finally { setAdding(''); }
   }
 
+  /* Covoiturage d'un événement existant : activer est immédiat ; désactiver supprime les choix
+     des familles, donc confirmation si certains existent. */
+  async function applyCarpool(on) {
+    setErr(''); setCarpoolBusy(true);
+    try {
+      const { error } = await supabase.schema('yps').rpc('set_event_carpool', { p_event: eventId, p_enabled: on });
+      if (error) throw error;
+      setCarpool(on); setCarpoolAsk(false); setCarpoolCount(0);
+      setCarpoolKey((k) => k + 1);
+      await loadTeam(teamId);
+    } catch (e) {
+      console.error('[set_event_carpool]', e);
+      setErr(t(carpoolErrKey(e)));
+    } finally { setCarpoolBusy(false); }
+  }
+  function onCarpoolBox(on) {
+    if (!locked) { setCarpool(on); return; }
+    if (!on && carpoolCount > 0) { setCarpoolAsk(true); return; }
+    applyCarpool(on);
+  }
+
   const toggleOne = (id) => setSel((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const allOn = players.length > 0 && sel.size === players.length;
   const toggleAll = () => setSel(allOn ? new Set() : new Set(players.map((p) => p.id)));
@@ -241,8 +270,15 @@ export default function Evenements() {
         ...(sel.size < players.length ? { p_players: [...sel] } : {}),
       });
       if (error) throw error;
+      let cpFailed = false;
+      if (newId && carpool && CARPOOL_TYPES.includes(type)) {
+        const { error: cpErr } = await supabase.schema('yps').rpc('set_event_carpool', { p_event: newId, p_enabled: true });
+        if (cpErr) { console.error('[set_event_carpool]', cpErr); cpFailed = true; }
+      }
       await loadTeam(teamId);
       if (newId) setEventId(newId);
+      setCarpool(carpool && !cpFailed);
+      if (cpFailed) { setErr(t('carpool.err.other')); }
       flash(t(sel.size === 1 ? 'evt.sent1' : 'evt.sent', { n: sel.size }));
     } catch (e) {
       console.error('[create_event]', e);
@@ -379,6 +415,36 @@ export default function Evenements() {
               </div>
             </div>
 
+            {/* Covoiturage : déplacements uniquement, modifiable après publication. */}
+            {CARPOOL_TYPES.includes(type) && (
+              <div style={{ marginTop: 14 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={carpool} disabled={carpoolBusy}
+                    onChange={(e) => onCarpoolBox(e.target.checked)}
+                    style={{ flex: '0 0 auto', width: 22, height: 22, accentColor: 'var(--brand-dark)' }} />
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 14, fontWeight: 700 }}>{t('carpool.option')}</span>
+                    <span style={{ display: 'block', fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.4 }}>{t('carpool.optionHint')}</span>
+                  </span>
+                </label>
+                {carpoolAsk && (
+                  <div role="alertdialog" aria-label={t('carpool.offTitle')} style={{ marginTop: 8, padding: 12, borderRadius: 12,
+                    background: '#FFF1E3', border: '1px solid #F6DCC0' }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 800, color: '#9A5B18' }}>{t('carpool.offTitle')}</div>
+                    <div style={{ fontSize: 12.5, color: '#57534A', margin: '4px 0 10px', lineHeight: 1.5 }}>{t('carpool.offBody')}</div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button type="button" className="btn" disabled={carpoolBusy}
+                        style={{ minHeight: 44, width: 'auto', padding: '0 16px', marginBottom: 0 }}
+                        onClick={() => applyCarpool(false)}>{t('carpool.offYes')}</button>
+                      <button type="button" className="btn ghost" disabled={carpoolBusy}
+                        style={{ minHeight: 44, width: 'auto', padding: '0 16px', marginBottom: 0 }}
+                        onClick={() => setCarpoolAsk(false)}>{t('carpool.offNo')}</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Consignes pour les familles : modifiables même après publication. */}
             <div style={{ marginTop: 14 }}>
               {field(t('evt.notes'))}
@@ -483,6 +549,11 @@ export default function Evenements() {
               </div>
             )}
           </div>
+
+          {locked && carpool && CARPOOL_TYPES.includes(type) && (
+            <StaffCarpool eventId={eventId} refreshKey={carpoolKey}
+              onLoaded={(d) => setCarpoolCount(Array.isArray(d?.people) ? d.people.length : 0)} />
+          )}
 
           {/* Un événement existant se consulte : aucun bouton d'envoi, les
               convocations sont déjà parties au moment de sa création. */}

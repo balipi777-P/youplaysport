@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { loadMyChildren, pickChild, setStoredChildId } from '../../lib/children';
 import { useT } from '../../lib/i18n';
 import EventNotes from '../components/EventNotes';
+import { ParentCarpool } from '../components/Carpool';
 
 const TICON = { match: '⚽', tournoi: '🏆', stage: '🏕️', sortie: '🚌', reunion: '👥' };
 
@@ -141,6 +142,7 @@ export default function Agenda() {
               </div>
             )}
             {!i.response && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>{t('agenda.pleaseRespond')}</div>}
+            <ParentCarpool eventId={i.eventId} refreshKey={i.response || ''} />
           </div>
         );
       })}
