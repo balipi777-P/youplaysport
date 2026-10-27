@@ -42,6 +42,8 @@ export default function MesDonnees() {
         name: au?.full_name || '', email: data.session.user.email || '',
         roles: roles.length ? roles : (kids.length ? ['parent'] : []), clubs, teams,
         kids: kids.filter((k) => k.user_id !== uid), isAthlete: own.length > 0,
+        isParent: (roles.includes('parent') || kids.some((k) => k.user_id !== uid))
+          && !roles.includes('coach') && !roles.includes('admin') && own.length === 0,
       });
       setReady(true);
     })();
@@ -193,14 +195,16 @@ export default function MesDonnees() {
 
       <ContactClub />
 
-      <div className="card">
-        <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>{t('mydata.exportT')}</div>
-        <p style={{ fontSize: 13, color: '#5A554B', lineHeight: 1.55, margin: '0 0 14px' }}>{t('mydata.exportD')}</p>
-        <button type="button" className="btn" disabled={busy !== ''} onClick={exportData}>
-          {busy === 'export' ? '…' : t('mydata.exportCta')}
-        </button>
-        {msg && <div className="pill" style={{ marginTop: 12 }}>{msg}</div>}
-      </div>
+      {me?.isParent && (
+        <div className="card">
+          <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>{t('mydata.exportT')}</div>
+          <p style={{ fontSize: 13, color: '#5A554B', lineHeight: 1.55, margin: '0 0 14px' }}>{t('mydata.exportD')}</p>
+          <button type="button" className="btn" disabled={busy !== ''} onClick={exportData}>
+            {busy === 'export' ? '…' : t('mydata.exportCta')}
+          </button>
+          {msg && <div className="pill" style={{ marginTop: 12 }}>{msg}</div>}
+        </div>
+      )}
 
       <div className="card" style={{ border: `1.5px solid ${DANGER}` }}>
         <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 6, color: DANGER }}>{t('mydata.dangerT')}</div>

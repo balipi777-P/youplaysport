@@ -9,8 +9,7 @@ import { requestError, requestStatus, MAX_SUBJECT, MAX_BODY } from '../../lib/cl
 /**
  * Bloc « Contacter mon club » + « Mes demandes » de la page Mon profil.
  * Réservé aux parents et aux coachs : un athlète (compte autonome, mineur) et un
- * dirigeant (destinataire des demandes) ne voient rien. Le lien « Contacter la plateforme »
- * ouvre le même formulaire de ticket que la console, via create_platform_ticket.
+ * dirigeant (destinataire des demandes) ne voient rien.
  */
 export default function ContactClub() {
   const { t, lang } = useT();
@@ -24,9 +23,6 @@ export default function ContactClub() {
   const [mine, setMine] = useState(null);         // null = pas encore lu
   const [openId, setOpenId] = useState('');
   const [replies, setReplies] = useState({});
-  const [platform, setPlatform] = useState(false);
-  const [pSubject, setPSubject] = useState('');
-  const [pBody, setPBody] = useState('');
 
   const loadMine = useCallback(async () => {
     const { data, error } = await supabase.schema('yps').rpc('my_club_requests');
@@ -86,17 +82,6 @@ export default function ContactClub() {
     loadMine();
   }
 
-  async function sendPlatform() {
-    setErr(''); setMsg('');
-    if (!pSubject.trim() || !pBody.trim()) { setErr(t('adm.sup.errEmpty')); return; }
-    setBusy('platform');
-    const { error } = await supabase.schema('yps').rpc('create_platform_ticket',
-      { p_club: clubId, p_subject: pSubject.trim(), p_body: pBody.trim() });
-    setBusy('');
-    if (error) { console.error('create_platform_ticket', error.message); setErr(t(requestError(error))); return; }
-    setPSubject(''); setPBody(''); setPlatform(false); setMsg(t('adm.sup.sent'));
-  }
-
   return (
     <>
       <div className="card" style={{ minWidth: 0 }}>
@@ -123,26 +108,6 @@ export default function ContactClub() {
         </button>
         {msg && <div className="pill" style={{ marginTop: 12 }}>{msg}</div>}
         {err && <div className="error" role="alert" style={{ marginTop: 12 }}>{err}</div>}
-
-        <div style={{ marginTop: 14, fontSize: 12.5 }}>
-          <a href="#" style={{ color: 'var(--muted)' }}
-            onClick={(e) => { e.preventDefault(); setPlatform((v) => !v); setErr(''); setMsg(''); }}>
-            {t('ctc.platformLink')}
-          </a>
-        </div>
-        {platform && (
-          <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-            <div className="label" style={{ marginBottom: 8 }}>{t('adm.sup.contact')}</div>
-            <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.55, marginBottom: 10 }}>{t('ctc.platformIntro')}</div>
-            <input className="input" value={pSubject} maxLength={MAX_SUBJECT} placeholder={t('adm.sup.subjectPh')}
-              onChange={(e) => setPSubject(e.target.value)} />
-            <textarea className="input" rows={5} value={pBody} maxLength={4000} placeholder={t('ctc.platformBodyPh')}
-              onChange={(e) => setPBody(e.target.value)} style={area} />
-            <button type="button" className="btn" disabled={busy !== ''} onClick={sendPlatform}>
-              {busy === 'platform' ? '…' : t('adm.sup.send')}
-            </button>
-          </div>
-        )}
       </div>
 
       {mine && mine.length > 0 && (
