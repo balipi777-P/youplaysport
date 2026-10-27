@@ -489,6 +489,7 @@ export default function Home() {
             onPresence={() => openSession(staffSession?.team_id || coachTeams[0]?.id || '', '#presences')}
             onSkills={() => openSession(staffSession?.team_id || coachTeams[0]?.id || '', '#competences')}
             onManageClub={staff.role === 'admin' ? () => router.push('/club') : null}
+            onMessages={() => router.push('/messages')}
           />
         </>
       )}

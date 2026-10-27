@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
 import { getStored, KEY_TEAM } from '../../lib/spaces';
 import { NOTES_MAX, withNotes } from '../../lib/eventNotes';
+import { markEventSeen } from '../../lib/alertCounts';
 import { StaffCarpool, CARPOOL_TYPES, carpoolErrKey } from '../components/Carpool';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 
@@ -155,6 +156,8 @@ export default function Evenements() {
   }, [t]);
 
   useEffect(() => { loadConvocations(eventId); }, [eventId, loadConvocations]);
+  /* Le staff a ouvert l'événement : le repère de lecture avance (erreur ignorée en silence). */
+  useEffect(() => { if (eventId) markEventSeen(eventId); }, [eventId]);
 
   /* Sélectionner un événement existant, c'est le consulter : les champs
      reprennent ses valeurs et ne sont plus modifiables ici. */

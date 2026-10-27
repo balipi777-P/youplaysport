@@ -9,6 +9,8 @@ import ClubAvatar from './ClubAvatar';
 import { firstNameOf } from '../../lib/userName';
 import EventNotes from './EventNotes';
 import ConvocationAnswer from './ConvocationAnswer';
+import CountBadge from './CountBadge';
+import { useParentAlerts } from '../../lib/alertCounts';
 
 /* Vue « Journée sportive » du parent. Composant purement présentatif : toutes les
    données arrivent en props depuis l'accueil, qui reste seul à parler à Supabase.
@@ -79,6 +81,8 @@ export default function ParentJournal({
   const defi = session?.session_challenge;
   const axes = session?.session_axes || [];
 
+  const alerts = useParentAlerts();
+  const agendaCount = (alerts.convocations || 0) + (alerts.carpool || 0);
   const team = player?.teams;
   const clubName = team?.clubs?.name || '';
 
@@ -206,21 +210,18 @@ export default function ParentJournal({
             <Icon name="star" size={17} />{t('home.carnet')}
           </span>
         </button>
-        <button className="btn ghost" style={{ marginBottom: 0 }} onClick={onAgenda}>
+        <button className="btn ghost" style={{ marginBottom: 0 }} onClick={onAgenda}
+          aria-label={agendaCount > 0 ? `${t('home.agenda')} · ${t('alerts.countAria', { n: agendaCount })}` : undefined}>
           <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
             <Icon name="calendar" size={17} />{t('home.agenda')}
+            <CountBadge n={agendaCount} />
           </span>
         </button>
         <button className="btn ghost" style={{ marginBottom: 0, position: 'relative' }} onClick={onClub}
           aria-label={clubUnread.count > 0 ? `${t('home.clubAria')} · ${t('ctc.unread')}` : t('home.clubAria')}>
           <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
             <Icon name="chat" size={17} />{t('home.club')}
-            {clubUnread.count > 0 && (
-              <span aria-hidden="true" style={{ minWidth: 18, height: 18, borderRadius: 999, background: 'var(--brand)', color: '#fff',
-                fontSize: 11, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px' }}>
-                {clubUnread.count > 9 ? '9+' : clubUnread.count}
-              </span>
-            )}
+            <CountBadge n={clubUnread.count} />
           </span>
         </button>
       </div>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
 import { carpoolErrKey } from './Carpool';
+import { refreshAlertCounts } from '../../lib/alertCounts';
 
 const TAP = { minHeight: 44, marginBottom: 0 };
 
@@ -60,6 +61,7 @@ export default function ConvocationAnswer({ eventId, playerId, response, onSaved
       setBusy(false);
       return;
     }
+    refreshAlertCounts();
     if (onSaved) await onSaved();
     await load();
     setBusy(false);

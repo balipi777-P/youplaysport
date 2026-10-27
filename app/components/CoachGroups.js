@@ -3,6 +3,8 @@
 import { useT } from '../../lib/i18n';
 import CoachNextEvent from './CoachNextEvent';
 import AppHeader from './AppHeader';
+import CountBadge from './CountBadge';
+import { useStaffAlerts } from '../../lib/alertCounts';
 import { firstNameOf } from '../../lib/userName';
 
 /* Onglet « Groupes » du coach — l'accueil de son espace. Composant purement
@@ -52,10 +54,11 @@ function Chip({ children }) {
 
 export default function CoachGroups({
   todayLabel, coachName, headClub, showAccountHeader, onProfile, onLogout, todaySession, teams, showClub,
-  joinCode, nextEvent, onOpenEvent, onOpenSession, onNewSession, onNewEvent, onPresence, onSkills, onManageClub,
+  joinCode, nextEvent, onOpenEvent, onOpenSession, onNewSession, onNewEvent, onPresence, onSkills, onManageClub, onMessages,
 }) {
   const { t, lang } = useT();
 
+  const alerts = useStaffAlerts();
   const name = coachName ? t('hello.name', { name: firstNameOf(coachName) }) : t('coach.fallbackName');
 
   /* Horaire de la séance du jour. La table sessions n'a pas de colonne de lieu :
@@ -66,10 +69,11 @@ export default function CoachGroups({
 
   const quick = [
     { key: 'coach.newSession', icon: '📝', run: onNewSession },
-    { key: 'coach.newEvent', icon: '📣', run: onNewEvent },
-    { key: 'coach.markPresence', icon: '✅', run: onPresence },
+    { key: 'coach.newEvent', icon: '📣', run: onNewEvent, n: alerts.events },
+    { key: 'coach.markPresence', icon: '✅', run: onPresence, n: alerts.sessions },
     { key: 'coach.validateSkills', icon: '🌟', run: onSkills },
-  ];
+    { key: 'home.club', icon: '💬', run: onMessages, n: alerts.messages, wide: true },
+  ].filter((q) => q.run);
 
   return (
     <>
@@ -174,9 +178,11 @@ export default function CoachGroups({
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         {quick.map((q) => (
           <button key={q.key} type="button" onClick={q.run}
-            style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 18,
+            aria-label={q.n > 0 ? `${t(q.key)} · ${t('alerts.countAria', { n: q.n })}` : undefined}
+            style={{ position: 'relative', minHeight: 44, gridColumn: q.wide ? 'span 2' : undefined, background: '#fff', border: '1px solid var(--border)', borderRadius: 18,
               padding: '16px 12px', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
               boxShadow: '0 8px 22px rgba(28,26,23,0.05)' }}>
+            <CountBadge n={q.n} style={{ position: 'absolute', top: 8, right: 8 }} />
             <span aria-hidden="true" style={{ display: 'block', fontSize: 20, lineHeight: 1 }}>{q.icon}</span>
             <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--ink)',
               lineHeight: 1.35, marginTop: 8 }}>

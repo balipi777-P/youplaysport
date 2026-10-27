@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 import { loadMyChildren } from '../../lib/children';
 import { useT } from '../../lib/i18n';
+import { usePendingConvocations } from '../../lib/alertCounts';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 
 /* Centre de notifications du parent : tous ses enfants, tous leurs clubs.
@@ -86,6 +87,7 @@ export default function Alertes() {
   const [ready, setReady] = useState(false);
   const [navRole, setNavRole] = useState('parent');
   const [tab, setTab] = useState('inbox');
+  const pending = usePendingConvocations();
   const [items, setItems] = useState([]);
   /* Dernier passage sur la boîte, lu au montage puis repoussé à maintenant : ce qui
      est arrivé depuis est non lu. Faute d'écriture possible sur notifications.read_at,
@@ -349,7 +351,18 @@ export default function Alertes() {
 
       {tab === 'inbox' && (
         <>
-          {items.length === 0 && (
+          {pending.count > 0 && pending.next && (
+            <button type="button" onClick={() => router.push('/agenda')}
+              style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', minHeight: 44, textAlign: 'left',
+                cursor: 'pointer', fontFamily: 'inherit', color: 'inherit', background: GREEN_BG,
+                border: `1px solid ${GREEN_LINE}`, borderRadius: 18, padding: '14px 16px', marginBottom: 12 }}>
+              <span aria-hidden="true" style={{ flex: '0 0 9px', width: 9, height: 9, borderRadius: 999, background: GREEN_DOT }} />
+              <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, lineHeight: 1.35 }}>
+                {t('alerts.newEvent', { type: t(`event.${pending.next.type}`), date: longDate(pending.next.date, lang) })}
+              </span>
+            </button>
+          )}
+          {items.length === 0 && pending.count === 0 && (
             <div className="card"><p style={{ margin: 0, color: 'var(--muted)', lineHeight: 1.6 }}>
               {t('alerts.empty')}
             </p></div>
