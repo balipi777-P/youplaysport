@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { loadMyChildren, pickChild, setStoredChildId } from '../../lib/children';
 import { useT } from '../../lib/i18n';
 import EventNotes from '../components/EventNotes';
-import { ParentCarpool } from '../components/Carpool';
+import ConvocationAnswer from '../components/ConvocationAnswer';
 
 const TICON = { match: '⚽', tournoi: '🏆', stage: '🏕️', sortie: '🚌', reunion: '👥' };
 
@@ -17,7 +17,6 @@ export default function Agenda() {
   const [children, setChildren] = useState([]);
   const [player, setPlayer] = useState(null);
   const [items, setItems] = useState([]);
-  const [busyId, setBusyId] = useState('');
   const [err, setErr] = useState('');
 
   const loadEvents = useCallback(async (p) => {
@@ -50,22 +49,6 @@ export default function Agenda() {
   function switchChild(id) {
     setStoredChildId(id);
     loadEvents(children.find((c) => c.id === id));
-  }
-
-  async function respond(item, response) {
-    setBusyId(item.convId); setErr('');
-    try {
-      const { error } = await supabase.schema('yps').rpc('rsvp', {
-        p_event: item.eventId, p_player: item.playerId, p_response: response,
-      });
-      if (error) throw error;
-      await loadEvents(player);
-    } catch (e) {
-      console.error('[rsvp]', e);
-      const m = String(e?.message || '');
-      const code = ['not_authorized', 'not_convoked', 'event_not_found'].find((c) => m.includes(c));
-      setErr(code ? t(`rsvp.err.${code}`) : t('rsvp.err.other'));
-    } finally { setBusyId(''); }
   }
 
   if (!ready) return <div className="wrap"><p style={{ color: 'var(--muted)' }}>{t('common.loading')}</p></div>;
@@ -130,32 +113,18 @@ export default function Agenda() {
               {fmt(i.ev.datetime, lang)}{i.ev.place ? ` · ${i.ev.place}` : ''}
             </div>
             <EventNotes text={i.ev.notes} />
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button type="button" disabled={busyId === i.convId} onClick={() => respond(i, 'present')}
-                style={btn(i.response === 'present', '#1E7B34', '#E6F4EA')}>{t('agenda.present')}</button>
-              <button type="button" disabled={busyId === i.convId} onClick={() => respond(i, 'absent')}
-                style={btn(i.response === 'absent', '#C0392B', '#FDECEA')}>{t('agenda.absent')}</button>
-            </div>
             {i.ev.rsvp_deadline && (
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
                 {t('rsvp.deadline', { date: fmt(i.ev.rsvp_deadline, lang) })}
               </div>
             )}
             {!i.response && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>{t('agenda.pleaseRespond')}</div>}
-            <ParentCarpool eventId={i.eventId} refreshKey={i.response || ''} />
+            <ConvocationAnswer eventId={i.eventId} playerId={i.playerId} response={i.response} onSaved={() => loadEvents(player)} />
           </div>
         );
       })}
     </div>
   );
-}
-
-function btn(active, color, bg) {
-  return {
-    flex: 1, border: 'none', borderRadius: 12, padding: '11px 0', fontSize: 13, fontWeight: 700,
-    cursor: 'pointer', fontFamily: 'inherit',
-    background: active ? color : bg, color: active ? '#fff' : color,
-  };
 }
 
 function fmt(d, lang) {

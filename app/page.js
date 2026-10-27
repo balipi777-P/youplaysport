@@ -303,27 +303,6 @@ export default function Home() {
     loadUpcoming(player, myPlayerIds.includes(player.id));
   }, [player, myPlayerIds, loadUpcoming]);
 
-  /* Réponse du parent depuis le journal : même RPC que l'agenda (contrôle du
-     lien parent côté base), puis rechargement de la convocation affichée. */
-  const [parentRsvpBusy, setParentRsvpBusy] = useState(false);
-  const [parentRsvpErr, setParentRsvpErr] = useState('');
-  async function respondParent(eventId, answer) {
-    if (!player || !eventId || parentRsvpBusy) return;
-    setParentRsvpBusy(true); setParentRsvpErr('');
-    try {
-      const { error } = await supabase.schema('yps').rpc('rsvp', {
-        p_event: eventId, p_player: player.id, p_response: answer,
-      });
-      if (error) throw error;
-      await loadUpcoming(player, false);
-    } catch (e) {
-      console.error('[rsvp]', e);
-      const m = String(e?.message || '');
-      const code = ['not_authorized', 'not_convoked', 'event_not_found'].find((c) => m.includes(c));
-      setParentRsvpErr(code ? t(`rsvp.err.${code}`) : t('rsvp.err.other'));
-    } finally { setParentRsvpBusy(false); }
-  }
-
   /* Réponse à une convocation. L'enum rsvp_response ne connaît que 'present' et
      'absent', et la RLS n'autorise cette mise à jour qu'au licencié lui-même. */
   async function respond(eventId, answer) {
@@ -433,7 +412,7 @@ export default function Home() {
           onLogout={logout}
           kids={children}
           player={player}
-          onRespond={respondParent} respondBusy={parentRsvpBusy} respondErr={parentRsvpErr}
+          onAnswered={() => loadUpcoming(player, false)}
           clubCount={clubCount}
           session={session}
           attendance={attendance}

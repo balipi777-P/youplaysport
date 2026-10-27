@@ -8,7 +8,7 @@ import { useT } from '../../lib/i18n';
 import ClubAvatar from './ClubAvatar';
 import { firstNameOf } from '../../lib/userName';
 import EventNotes from './EventNotes';
-import { ParentCarpool } from './Carpool';
+import ConvocationAnswer from './ConvocationAnswer';
 
 /* Vue « Journée sportive » du parent. Composant purement présentatif : toutes les
    données arrivent en props depuis l'accueil, qui reste seul à parler à Supabase.
@@ -67,7 +67,7 @@ export default function ParentJournal({
   headClub, onProfile, onLogout,
   onSwitchChild, onAdd, onCarnet, onAgenda, onClub, onReadReply,
   clubUnread = { count: 0, latest: null },
-  onRespond, respondBusy, respondErr,
+  onAnswered,
 }) {
   const { t, lang } = useT();
   /* Une seule section ouverte à la fois ; le compte rendu l'est au départ. */
@@ -415,27 +415,12 @@ export default function ParentJournal({
             ].filter(Boolean).join(' · ')}
           </div>
           <EventNotes text={nextEvent.notes} />
-          {/* Réponse du parent : écrite en base par l'accueil, l'état affiché vient d'elle. */}
-          <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-            {[['present', 'journal.present'], ['absent', 'journal.absent']].map(([answer, key]) => {
-              const on = convocation?.response === answer;
-              return (
-                <button key={answer} type="button" className={on ? 'btn' : 'btn ghost'}
-                  aria-pressed={on} disabled={!onRespond || respondBusy}
-                  onClick={() => onRespond && onRespond(nextEvent.id, answer)}
-                  style={{ marginBottom: 0, flex: 1 }}>
-                  {t(key)}
-                </button>
-              );
-            })}
-          </div>
-          {respondErr && <div className="error" role="alert" style={{ marginTop: 10 }}>{respondErr}</div>}
+          <ConvocationAnswer eventId={nextEvent.id} playerId={player.id} response={convocation?.response || ''} onSaved={onAnswered} />
           <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginTop: 10 }}>
             {convocation?.response
               ? t('journal.answered', { answer: t(convocation.response === 'present' ? 'journal.present' : 'journal.absent') })
               : t('journal.noAnswer')}
           </div>
-          <ParentCarpool eventId={nextEvent.id} refreshKey={`${convocation?.response || ''}`} />
         </div>
       )}
     </div>
