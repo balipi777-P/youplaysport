@@ -69,7 +69,7 @@ export default function CoachGroups({
 
   const quick = [
     { key: 'coach.newSession', icon: '📝', run: onNewSession },
-    { key: 'coach.newEvent', icon: '📣', run: onNewEvent, n: alerts.events },
+    { key: 'nav.events', icon: '📣', run: onNewEvent, n: alerts.events },
     { key: 'coach.markPresence', icon: '✅', run: onPresence, n: alerts.sessions },
     { key: 'coach.validateSkills', icon: '🌟', run: onSkills },
     { key: 'home.club', icon: '💬', run: onMessages, n: alerts.messages, wide: true },

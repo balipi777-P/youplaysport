@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { useT } from '../../lib/i18n';
 import { getStored, KEY_TEAM } from '../../lib/spaces';
 import { NOTES_MAX, withNotes } from '../../lib/eventNotes';
-import { markEventSeen } from '../../lib/alertCounts';
+import { markEventSeen, useStaffEventNews } from '../../lib/alertCounts';
 import { StaffCarpool, CARPOOL_TYPES, carpoolErrKey } from '../components/Carpool';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 
@@ -69,6 +69,9 @@ export default function Evenements() {
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
   const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);   // « + » : formulaire d'un nouvel événement
+  const [deepLink, setDeepLink] = useState(false);   // ?event=… : on ouvre directement le détail
+  const news = useStaffEventNews();
 
   /* Message clair pour les erreurs des RPC de convocation. */
   const rpcMsg = (e) => {
@@ -87,7 +90,10 @@ export default function Evenements() {
   };
   /* ?event=… : l'accueil ouvre l'écran sur un événement précis (lu une seule fois). */
   const wantedEvent = useRef(null);
-  useEffect(() => { wantedEvent.current = new URLSearchParams(window.location.search).get('event'); }, []);
+  useEffect(() => {
+    wantedEvent.current = new URLSearchParams(window.location.search).get('event');
+    if (wantedEvent.current) setDeepLink(true);
+  }, []);
   useEffect(() => () => clearTimeout(okTimer.current), []);
 
   useEffect(() => {
@@ -137,6 +143,7 @@ export default function Evenements() {
       if ((evs || []).some((e) => e.id === wantedEvent.current)) setEventId(wantedEvent.current);
       wantedEvent.current = null;
     }
+    setDeepLink(false);
   }, []);
 
   useEffect(() => { setEventId(''); setCarpool(false); setCarpoolAsk(false); loadTeam(teamId); }, [teamId, loadTeam]);
@@ -163,6 +170,7 @@ export default function Evenements() {
      reprennent ses valeurs et ne sont plus modifiables ici. */
   function pickEvent(id) {
     setEventId(id);
+    setCreating(!id);
     setErr('');
     setCarpoolAsk(false); setCarpoolCount(0);
     const ev = events.find((e) => e.id === id);
@@ -316,6 +324,12 @@ export default function Evenements() {
 
   const field = (text) => <div className="label" style={{ marginBottom: 6 }}>{text}</div>;
 
+  const showList = !eventId && !creating && !deepLink;
+  const withNews = new Set((Array.isArray(news) ? news : []).map((n) => n.event_id));
+  const horizon = Date.now() - 24 * 3600 * 1000; // même fenêtre que les compteurs : à venir, ou passé depuis moins de 24 h
+  const upcoming = events.filter((ev) => !ev.datetime || new Date(ev.datetime).getTime() >= horizon);
+  const backToList = () => { pickEvent(''); setCreating(false); };
+
   return (
     <div className="wrap" style={{ paddingBottom: BOTTOM_NAV_HEIGHT + 24 }}>
       {/* ===== Confirmation : tout en haut, fermable, disparaît seule ===== */}
@@ -332,16 +346,23 @@ export default function Evenements() {
       )}
       {/* ===== En-tête ===== */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 18 }}>
-        <a href="#" onClick={(e) => { e.preventDefault(); router.push('/'); }}
-          style={{ fontWeight: 700, fontSize: 16, lineHeight: '22px' }}>‹</a>
-        <div style={{ minWidth: 0 }}>
+        <a href="#" onClick={(e) => { e.preventDefault(); if (showList) router.push('/'); else backToList(); }}
+          style={{ fontWeight: 700, fontSize: 16, lineHeight: '22px', minWidth: 22, minHeight: 44, display: 'inline-flex', alignItems: 'flex-start' }}>‹</a>
+        <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ color: 'var(--muted)', fontSize: 10.5, fontWeight: 800, letterSpacing: '.9px' }}>
             {t('evt.eyebrow')}
           </div>
           <h1 className="q" style={{ fontSize: 22, letterSpacing: '-0.3px', margin: '3px 0 0' }}>
-            {t('evt.headTitle')}
+            {showList ? t('nav.events') : t('evt.headTitle')}
           </h1>
         </div>
+        {showList && teams.length > 0 && (
+          <button type="button" aria-label={t('evt.newEvent')} title={t('evt.newEvent')}
+            onClick={() => pickEvent('')}
+            style={{ flex: '0 0 auto', width: 44, height: 44, borderRadius: 999, border: 'none', cursor: 'pointer',
+              background: 'var(--brand)', color: '#fff', fontSize: 26, lineHeight: 1, fontFamily: 'inherit',
+              boxShadow: '0 4px 10px rgba(192,91,68,.35)' }}>+</button>
+        )}
       </div>
 
       {teams.length === 0 && (
@@ -351,6 +372,55 @@ export default function Evenements() {
       {teams.length > 0 && (
         <>
           {err && <div className="error" role="alert">{err}</div>}
+
+          {/* ===== Liste des événements à venir ===== */}
+          {showList && (
+            <>
+              {teams.length > 1 && (
+                <div className="card">
+                  {field(t('evt.team'))}
+                  <select className="input" style={{ marginBottom: 0 }} value={teamId}
+                    onChange={(e) => setTeamId(e.target.value)}>
+                    {teams.map((tm) => <option key={tm.id} value={tm.id}>{tm.name}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className="label" style={{ margin: '4px 0 8px' }}>{t('evt.upcoming')}</div>
+              {upcoming.length === 0 ? (
+                <div className="card"><p style={{ margin: 0, color: 'var(--muted)', fontSize: 13 }}>{t('evt.none')}</p></div>
+              ) : (
+                <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                  {upcoming.map((ev, i) => (
+                    <button key={ev.id} type="button" onClick={() => pickEvent(ev.id)}
+                      style={{ width: '100%', minHeight: 44, display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '12px 14px', background: 'transparent', border: 'none', cursor: 'pointer',
+                        fontFamily: 'inherit', textAlign: 'left',
+                        borderTop: i === 0 ? 'none' : '1px solid var(--border)' }}>
+                      <span aria-hidden="true" style={{ flex: '0 0 auto', fontSize: 20 }}>{TMAP[ev.type]?.icon || '📅'}</span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 14, fontWeight: 700, overflowWrap: 'anywhere' }}>
+                          {t(`event.${ev.type}`)}{ev.opponent ? ` · ${ev.opponent}` : ''}
+                        </span>
+                        <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginTop: 2, overflowWrap: 'anywhere' }}>
+                          {[ev.datetime && new Date(ev.datetime).toLocaleString(lang === 'en' ? 'en-GB' : 'fr-FR',
+                            { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }), ev.place]
+                            .filter(Boolean).join(' · ')}
+                        </span>
+                      </span>
+                      {withNews.has(ev.id) && (
+                        <span role="img" aria-label={t('evt.hasNews')}
+                          style={{ flex: '0 0 auto', width: 10, height: 10, borderRadius: 999, background: '#D64545' }} />
+                      )}
+                      <span aria-hidden="true" style={{ flex: '0 0 auto', color: 'var(--muted)', fontSize: 18 }}>›</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {!showList && (
+          <>
 
           {/* ===== Le groupe, et l'événement regardé ===== */}
           <div className="card">
@@ -575,6 +645,8 @@ export default function Evenements() {
                 boxShadow: '0 8px 20px rgba(192,91,68,.28)' }}>
               {busy ? t('evt.sending') : t('evt.send')}
             </button>
+          )}
+          </>
           )}
         </>
       )}

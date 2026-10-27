@@ -4,6 +4,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useT } from '../../lib/i18n';
 import Icon from './Icon';
 import { useClubUnread } from '../../lib/clubUnread';
+import { useStaffAlerts } from '../../lib/alertCounts';
+import CountBadge from './CountBadge';
 
 /* Onglets par rôle. Uniquement des routes qui existent.
    Groupes pointe sur l'accueil : c'est là que le coach voit ses groupes. Le
@@ -46,6 +48,7 @@ export default function BottomNav({ role = 'parent' }) {
   const { count: unread } = useClubUnread();
   const staff = role === 'coach' || role === 'admin';
   const badgeHref = staff ? '/mes-donnees' : '/alertes';
+  const staffAlerts = useStaffAlerts(staff);
 
   const isActive = (href) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
 
@@ -73,6 +76,10 @@ export default function BottomNav({ role = 'parent' }) {
               ) : (
                 <span style={{ position: 'relative', display: 'inline-flex' }}>
                   <Icon name={tab.icon} size={21} style={{ opacity: on ? 1 : 0.85 }} />
+                  {staff && tab.href === '/evenements' && (
+                    <CountBadge n={staffAlerts.events} label={t('alerts.countAria', { n: staffAlerts.events })}
+                      style={{ position: 'absolute', top: -6, left: 12, border: '1.5px solid #fff', boxSizing: 'content-box' }} />
+                  )}
                   {unread > 0 && tab.href === badgeHref && (
                     <span aria-label={t('ctc.unread')} style={{ position: 'absolute', top: -3, right: -6, minWidth: 8, height: 8,
                       borderRadius: 999, background: 'var(--brand)', border: '1.5px solid #fff' }} />
