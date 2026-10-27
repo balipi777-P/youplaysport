@@ -191,6 +191,7 @@ export default function Club() {
   const [parentsFailed, setParentsFailed] = useState(false);
   const [parentQuery, setParentQuery] = useState('');
   const [parentFilter, setParentFilter] = useState('all'); // all | pending | orphans
+  const [parentTeam, setParentTeam] = useState('');     // filtre équipe de l'onglet Parents ('' = toutes) ; vit au niveau Club pour survivre au changement d'onglet
   const [parentAsk, setParentAsk] = useState(null);       // {linkId, kind: 'reject' | 'detach'}
   const [parentBusy, setParentBusy] = useState('');
   const [orphanMail, setOrphanMail] = useState({});       // {playerId: email saisi}
@@ -1546,22 +1547,32 @@ export default function Club() {
         mail: r.fullMail || r.mail, maskedMail: r.mail, fullMail: r.fullMail, kids: [] });
       const pl = kidById[r.playerId];
       slot.kids.push({ linkId: r.linkId, playerId: r.playerId, status: r.status,
-        childLabel: pl ? kidName(pl) : '—', teamLabel: pl ? teamLabelOf(pl.team_id) : '' });
+        childLabel: pl ? kidName(pl) : '—', teamLabel: pl ? teamLabelOf(pl.team_id) : '',
+        teamId: pl ? pl.team_id : null });
     }
     const allParents = Object.values(byParent).sort((a, b) =>
       (b.kids.filter((k) => k.status === 'pending').length - a.kids.filter((k) => k.status === 'pending').length)
       || a.label.localeCompare(b.label));
     const withLink = new Set(rawRels.filter((r) => r.status !== 'rejected').map((r) => r.playerId));
     const allOrphans = rawKids.filter((pl) => !withLink.has(pl.id));
-    const pendingParents = allParents.filter((pr) => pr.kids.some((k) => k.status === 'pending'));
-    const activeParents = allParents.filter((pr) => pr.kids.some((k) => k.status !== 'rejected'));
+
+    /* Équipe choisie ('' = toutes) ; une équipe disparue depuis redevient « toutes ». */
+    const teamPick = teams.some((tm) => tm.id === parentTeam) ? parentTeam : '';
+    const inPickedTeam = (tid) => !teamPick || tid === teamPick;
+    const orphansInTeam = allOrphans.filter((pl) => inPickedTeam(pl.team_id)).sort((a, b) =>
+      teamLabelOf(a.team_id).localeCompare(teamLabelOf(b.team_id)) || kidName(a).localeCompare(kidName(b)));
+    const parentsInTeam = allParents.filter((pr) => pr.kids.some((k) => inPickedTeam(k.teamId)));
+    const pendingParents = allParents.filter((pr) => pr.kids.some((k) => k.status === 'pending' && inPickedTeam(k.teamId)));
+    const activeParents = allParents.filter((pr) => pr.kids.some((k) => k.status !== 'rejected' && inPickedTeam(k.teamId)));
+    /* Pastille d'équipe : parents ayant au moins un enfant (non refusé) dans l'équipe. */
+    const teamParentCount = (tid) => allParents.filter((pr) => pr.kids.some((k) => k.status !== 'rejected' && k.teamId === tid)).length;
 
     const needle = fold(parentQuery.trim());
-    const parentHit = (pr) => !needle || fold(pr.label).includes(needle) || fold(pr.mail).includes(needle) || fold(pr.maskedMail).includes(needle)
-      || pr.kids.some((k) => fold(k.childLabel).includes(needle));
-    const shownParents = (parentFilter === 'pending' ? pendingParents : allParents).filter(parentHit);
-    const shownOrphans = allOrphans.filter((pl) => !needle || fold(kidName(pl)).includes(needle));
-    const showOrphanBlock = parentFilter !== 'pending' && allOrphans.length > 0;
+    const parentHit = (pr) => !needle || fold(pr.label).includes(needle) || fold(pr.mail).includes(needle)
+      || fold(pr.maskedMail).includes(needle) || pr.kids.some((k) => fold(k.childLabel).includes(needle));
+    const shownParents = (parentFilter === 'pending' ? pendingParents : parentsInTeam).filter(parentHit);
+    const shownOrphans = orphansInTeam.filter((pl) => !needle || fold(kidName(pl)).includes(needle));
+    const showOrphanBlock = parentFilter !== 'pending' && orphansInTeam.length > 0;
     const showParentBlock = parentFilter !== 'orphans';
 
     const chipTone = {
@@ -1694,13 +1705,29 @@ export default function Club() {
               <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
                 {filterBtn('all', t('par.fAll'))}
                 {filterBtn('pending', t('par.fPending', { n: pendingParents.length }))}
-                {filterBtn('orphans', t('par.fOrphans', { n: allOrphans.length }))}
+                {filterBtn('orphans', t('par.fOrphans', { n: orphansInTeam.length }))}
               </div>
+              {teams.length > 0 && (
+                <div role="group" aria-label={t('par.teamFilter')}
+                  style={{ display: 'flex', gap: 7, marginTop: 10, overflowX: 'auto', whiteSpace: 'nowrap',
+                    paddingBottom: 4, WebkitOverflowScrolling: 'touch' }}>
+                  {[{ id: '', name: t('par.allTeams'), n: null }, ...teams.map((tm) => ({ id: tm.id, name: tm.name, n: teamParentCount(tm.id) }))]
+                    .map((pill) => (
+                      <button key={pill.id || 'all'} type="button" aria-pressed={teamPick === pill.id}
+                        onClick={() => setParentTeam(pill.id)}
+                        style={{ flex: '0 0 auto', border: teamPick === pill.id ? '1.5px solid var(--brand)' : '1.5px solid var(--border)',
+                          background: teamPick === pill.id ? 'var(--peach)' : '#fff', color: 'var(--ink)', borderRadius: 20,
+                          padding: '7px 13px', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                        {pill.name}{pill.n !== null ? ` · ${pill.n}` : ''}
+                      </button>
+                    ))}
+                </div>
+              )}
             </div>
 
             {showOrphanBlock && (
               <div className="card" style={{ marginBottom: 0 }}>
-                {foldHead('par:orph', t('par.orphansN', { n: allOrphans.length }), !!folded['par:orph'])}
+                {foldHead('par:orph', t('par.orphansN', { n: orphansInTeam.length }), !!folded['par:orph'])}
                 {!folded['par:orph'] && (
                   <>
                     <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 10 }}>{t('par.orphansHint')}</div>
@@ -1710,7 +1737,7 @@ export default function Club() {
                 )}
               </div>
             )}
-            {parentFilter === 'orphans' && allOrphans.length === 0 && (
+            {parentFilter === 'orphans' && orphansInTeam.length === 0 && (
               <div className="card" style={{ marginBottom: 0, fontSize: 13, color: 'var(--muted)' }}>{t('par.noOrphans')}</div>
             )}
 
@@ -1719,8 +1746,8 @@ export default function Club() {
                 {foldHead('par:list', t('par.listN', { n: activeParents.length }), !!folded['par:list'])}
                 {!folded['par:list'] && (
                   <>
-                    {allParents.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.55 }}>{t('par.empty')}</div>}
-                    {allParents.length > 0 && shownParents.length === 0 && (
+                    {parentsInTeam.length === 0 && !needle && parentFilter === 'all' && <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.55 }}>{t('par.empty')}</div>}
+                    {(parentsInTeam.length > 0 || needle || parentFilter !== 'all') && shownParents.length === 0 && (
                       <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t(parentFilter === 'pending' && !needle ? 'par.noPending' : 'par.noMatch')}</div>
                     )}
                     <div style={{ display: 'grid', gap: 10 }}>{shownParents.map(parentCard)}</div>
