@@ -29,3 +29,7 @@ body {
 .pill { display:inline-flex; align-items:center; gap:6px; background:var(--peach); color:var(--brand-dark); border-radius:20px; padding:6px 12px; font-size:12px; font-weight:700; }
 .error { background:#FDECEA; color:#C0392B; border-radius:12px; padding:10px 12px; font-size:13px; margin-bottom:10px; }
 a { color: var(--brand-dark); }
+
+/* Journal parent : blocs plus aérés (16 px), sans toucher aux autres écrans. */
+.journal .card { margin-bottom:16px; }
+.journal .btn { min-height:44px; }

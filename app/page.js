@@ -15,6 +15,8 @@ import { withNotes } from '../lib/eventNotes';
 import AthleteToday from './components/AthleteToday';
 import CoachGroups from './components/CoachGroups';
 import PendingLinks from './components/PendingLinks';
+import Icon from './components/Icon';
+import { useClubUnread } from '../lib/clubUnread';
 
 /** Date du jour au format ISO, pour comparer à sessions.date. */
 function todayISO() {
@@ -25,6 +27,7 @@ function todayISO() {
 export default function Home() {
   const router = useRouter();
   const { t, lang } = useT();
+  const clubUnread = useClubUnread();
   const [ready, setReady] = useState(false);
   const [memberships, setMemberships] = useState([]);
   const [children, setChildren] = useState([]);
@@ -412,7 +415,7 @@ export default function Home() {
 
   return (
     <div className="wrap" style={{ paddingBottom: BOTTOM_NAV_HEIGHT + 24 }}>
-      <PilotBanner style={{ marginTop: 4 }} />
+      <PilotBanner compact style={{ marginTop: 4 }} />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
         {headClub ? (
           /* Le club en évidence ; YouPlaySport reste en filigrane. */
@@ -464,6 +467,9 @@ export default function Home() {
           onAdd={() => router.push('/ajouter')}
           onCarnet={() => router.push('/carnet')}
           onAgenda={() => router.push('/agenda')}
+          clubUnread={clubUnread}
+          onClub={() => router.push('/messages')}
+          onReadReply={(id) => router.push(`/messages?r=${id}`)}
         />
       )}
 
@@ -490,6 +496,18 @@ export default function Home() {
       {/* ---- Vue Coach / Dirigeant : ses groupes ---- */}
       {staff && (
         <>
+          {clubUnread.count > 0 && clubUnread.latest && (
+            <div className="card" role="status" style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--peach)', border: 'none' }}>
+              <Icon name="chat" size={18} />
+              <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, overflowWrap: 'anywhere' }}>
+                {t('msgs.card', { subject: clubUnread.latest.subject || '' })}
+              </span>
+              <button type="button" className="btn" onClick={() => router.push(`/messages?r=${clubUnread.latest.id}`)}
+                style={{ width: 'auto', minHeight: 44, padding: '9px 16px', fontSize: 13, marginBottom: 0 }}>
+                {t('msgs.read')}
+              </button>
+            </div>
+          )}
           {player && <div style={{ borderTop: '1px solid var(--border)', margin: '20px 0 4px' }} />}
           <PendingLinks />
           <CoachGroups

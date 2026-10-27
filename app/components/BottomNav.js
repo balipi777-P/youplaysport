@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useT } from '../../lib/i18n';
 import Icon from './Icon';
+import { useClubUnread } from '../../lib/clubUnread';
 
 /* Onglets par rôle. Uniquement des routes qui existent.
    Groupes pointe sur l'accueil : c'est là que le coach voit ses groupes. Le
@@ -42,6 +43,9 @@ export default function BottomNav({ role = 'parent' }) {
   const pathname = usePathname();
   const { t } = useT();
   const tabs = TABS[role] || TABS.parent;
+  const { count: unread } = useClubUnread();
+  const staff = role === 'coach' || role === 'admin';
+  const badgeHref = staff ? '/mes-donnees' : '/alertes';
 
   const isActive = (href) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
 
@@ -67,7 +71,13 @@ export default function BottomNav({ role = 'parent' }) {
                   <Icon name="plus" size={18} strokeWidth={2} />
                 </span>
               ) : (
-                <Icon name={tab.icon} size={21} style={{ opacity: on ? 1 : 0.85 }} />
+                <span style={{ position: 'relative', display: 'inline-flex' }}>
+                  <Icon name={tab.icon} size={21} style={{ opacity: on ? 1 : 0.85 }} />
+                  {unread > 0 && tab.href === badgeHref && (
+                    <span aria-label={t('ctc.unread')} style={{ position: 'absolute', top: -3, right: -6, minWidth: 8, height: 8,
+                      borderRadius: 999, background: 'var(--brand)', border: '1.5px solid #fff' }} />
+                  )}
+                </span>
               )}
               <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.2px' }}>{t(tab.key)}</span>
             </button>

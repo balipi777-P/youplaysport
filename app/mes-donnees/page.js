@@ -8,7 +8,8 @@ import { clearSpaceStorage } from '../../lib/spaces';
 import { loadMyChildren } from '../../lib/children';
 import BottomNav, { BOTTOM_NAV_HEIGHT } from '../components/BottomNav';
 import Fold from '../components/Fold';
-import ContactClub from '../components/ContactClub';
+import { loadContactClubs } from '../../lib/clubContact';
+import { useClubUnread } from '../../lib/clubUnread';
 
 const DANGER = '#C0392B';
 
@@ -17,6 +18,9 @@ export default function MesDonnees() {
   const { t, lang } = useT();
   const [me, setMe] = useState(null);     // { name, email, roles[], clubs[], kids[], teams[] }
   const [ready, setReady] = useState(false);
+  const [canWrite, setCanWrite] = useState(false);
+  const unread = useClubUnread();
+  useEffect(() => { loadContactClubs().then((l) => setCanWrite(l.length > 0)).catch(() => setCanWrite(false)); }, []);
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
@@ -180,7 +184,16 @@ export default function MesDonnees() {
         </div>
       )}
 
-      <ContactClub />
+      {canWrite && (
+        <button type="button" className="card" onClick={() => router.push('/messages')}
+          style={{ width: '100%', minHeight: 44, display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+            font: 'inherit', color: 'inherit', cursor: 'pointer' }}>
+          <span className="q" style={{ flex: 1, fontWeight: 700, fontSize: 15 }}>{t('msgs.link')}</span>
+          {unread.count > 0 && <span style={{ minWidth: 18, height: 18, borderRadius: 999, background: 'var(--brand)', color: '#fff',
+            fontSize: 11, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px' }}>{unread.count > 9 ? '9+' : unread.count}</span>}
+          <span aria-hidden="true" style={{ color: 'var(--muted)' }}>›</span>
+        </button>
+      )}
 
       {me?.roles.includes('admin') && (
         <div className="card">

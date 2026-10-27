@@ -61,7 +61,8 @@ export default function ParentJournal({
   todayLabel, userName, roleLine, kids, player, clubCount,
   session, attendance, attendanceAt, sessionSkills, streak,
   nextEvent, convocation,
-  onSwitchChild, onAlerts, onAdd, onCarnet, onAgenda,
+  onSwitchChild, onAlerts, onAdd, onCarnet, onAgenda, onClub, onReadReply,
+  clubUnread = { count: 0, latest: null },
   onRespond, respondBusy, respondErr,
 }) {
   const { t, lang } = useT();
@@ -129,7 +130,21 @@ export default function ParentJournal({
     : '';
 
   return (
-    <>
+    <div className="journal">
+      {/* ---- Carte « le club a répondu » : seulement si un message du club n'est pas lu ---- */}
+      {clubUnread.count > 0 && clubUnread.latest && (
+        <div className="card" role="status" style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--peach)', border: 'none' }}>
+          <Icon name="chat" size={18} />
+          <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, overflowWrap: 'anywhere' }}>
+            {t('msgs.card', { subject: clubUnread.latest.subject || '' })}
+          </span>
+          <button type="button" className="btn" onClick={() => onReadReply(clubUnread.latest.id)}
+            style={{ width: 'auto', minHeight: 44, padding: '9px 16px', fontSize: 13, marginBottom: 0 }}>
+            {t('msgs.read')}
+          </button>
+        </div>
+      )}
+
       {/* ---- En-tête : le jour, le titre, la portée du compte ---- */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
         <div style={{ minWidth: 0 }}>
@@ -148,7 +163,7 @@ export default function ParentJournal({
             justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>{initialsOfName(userName)}</span>
         )}
         <button type="button" onClick={onAlerts}
-          style={{ flex: '0 0 auto', border: '1px solid var(--border)', background: '#fff', borderRadius: 999,
+          style={{ flex: '0 0 auto', minHeight: 44, border: '1px solid var(--border)', background: '#fff', borderRadius: 999,
             padding: '8px 13px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
             color: 'var(--brand-dark)' }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -199,10 +214,6 @@ export default function ParentJournal({
           +
         </button>
       </div>
-      <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 14 }}>
-        {`${childLabel}, ${clubLabel}, ${t('journal.scopeTail')}`}
-      </div>
-
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <button className="btn ghost" style={{ marginBottom: 0 }} onClick={onCarnet}>
           <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
@@ -212,6 +223,18 @@ export default function ParentJournal({
         <button className="btn ghost" style={{ marginBottom: 0 }} onClick={onAgenda}>
           <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
             <Icon name="calendar" size={17} />{t('home.agenda')}
+          </span>
+        </button>
+        <button className="btn ghost" style={{ marginBottom: 0, position: 'relative' }} onClick={onClub}
+          aria-label={clubUnread.count > 0 ? `${t('home.clubAria')} · ${t('ctc.unread')}` : t('home.clubAria')}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+            <Icon name="chat" size={17} />{t('home.club')}
+            {clubUnread.count > 0 && (
+              <span aria-hidden="true" style={{ minWidth: 18, height: 18, borderRadius: 999, background: 'var(--brand)', color: '#fff',
+                fontSize: 11, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px' }}>
+                {clubUnread.count > 9 ? '9+' : clubUnread.count}
+              </span>
+            )}
           </span>
         </button>
       </div>
@@ -428,6 +451,6 @@ export default function ParentJournal({
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
