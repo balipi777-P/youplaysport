@@ -288,10 +288,6 @@ export default function Profil() {
             ))}
           </div>
         )}
-
-        <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.55, marginTop: 13 }}>
-          {t('profile.scope')}
-        </div>
       </div>
 
       {/* ---- Carnet de compétences ---- */}

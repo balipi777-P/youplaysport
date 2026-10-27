@@ -96,11 +96,6 @@ export default function MotDePasseOublie() {
       )}
 
       <button className="btn ghost" onClick={() => router.push('/login')}>{t('pwd.backToLogin')}</button>
-
-      {/* Promesse « un email = un compte » : rassure avant de quitter l'app pour sa boîte mail. */}
-      <p style={{ color: 'var(--muted)', fontSize: 12, lineHeight: 1.5, marginTop: 18, textAlign: 'center' }}>
-        {t('pwd.oneAccount')}
-      </p>
     </div>
   );
 }

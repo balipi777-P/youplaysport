@@ -1601,11 +1601,6 @@ export default function Club() {
                           {head.coaches.length === 0
                             ? <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>{t('club.noCoach')}</div>
                             : !(head.coaches.length > 3 && folded[`co:${tm.id}`]) && (Array.isArray(head.coachRows) ? head.coachRows : []).map((c) => coachItem(tm, c))}
-                          {head.coaches.length > 0 && (
-                            <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5, margin: '6px 0 10px' }}>
-                              {t('adm.coachPrivacy')}
-                            </div>
-                          )}
                           <div style={{ display: 'flex', gap: 7 }}>
                             <input className="input" style={{ marginBottom: 0, flex: 1, minWidth: 0 }}
                               value={teamCoachEmail[tm.id] || ''}
@@ -1934,7 +1929,6 @@ export default function Club() {
         {sectionHead('adm.nav.coaches')}
         <div className="card" style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>
           {t('club.coachHint', { code: club.join_code || '—' })}
-          <div style={{ marginTop: 6 }}>{t('adm.coachPrivacy')}</div>
         </div>
         {teams.length === 0 && (
           <div className="card"><p style={{ margin: 0, color: 'var(--muted)' }}>{t('club.noTeam')}</p></div>

@@ -619,9 +619,6 @@ export default function Seance() {
             <div className="label" style={{ marginBottom: 6, color: GREEN.soft }}>{t('sea.tip')}</div>
             <input className="input" style={{ marginBottom: 0 }} value={defi.tip}
               onChange={(e) => setDefi({ ...defi, tip: e.target.value })} placeholder={t('sea.tipPh')} />
-            <div style={{ fontSize: 11.5, color: GREEN.soft, lineHeight: 1.5, marginTop: 10 }}>
-              {t('sea.challengeNote')}
-            </div>
           </div>
 
           {/* ===== 7. Mot du coach + objectif ===== */}
@@ -678,9 +675,6 @@ export default function Seance() {
             <div className="q" style={{ fontWeight: 800, fontSize: 15, color: '#5F2A1C' }}>
               {t('sea.noDoubleTitle')}
             </div>
-            <p style={{ fontSize: 12.5, color: '#7A4030', lineHeight: 1.6, margin: '6px 0 0' }}>
-              {t('sea.noDouble')}
-            </p>
           </div>
           <button className="btn" disabled={busy} onClick={publish}
             style={{ marginTop: 4, padding: 16, fontSize: 16, borderRadius: 16, boxShadow: '0 8px 20px rgba(192,91,68,.28)' }}>

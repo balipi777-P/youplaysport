@@ -116,7 +116,6 @@ export default function ContactClub() {
       {back}
       <div className="card" style={{ minWidth: 0 }}>
         <div className="q" style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>{t('ctc.new')}</div>
-        <p style={{ fontSize: 13, color: '#5A554B', lineHeight: 1.55, margin: '0 0 12px' }}>{t('ctc.intro')}</p>
         {clubs.length > 1 && (
           <select className="input" value={clubId} onChange={(e) => setClubId(e.target.value)} aria-label={t('ctc.club')}>
             {clubs.map((c) => <option key={c.id} value={c.id}>{c.name || t('ctc.club')}</option>)}

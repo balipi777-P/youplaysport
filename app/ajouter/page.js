@@ -408,9 +408,6 @@ export default function AjouterEnfant() {
               cursor: !canSubmit || sending ? 'not-allowed' : 'pointer' }}>
             {sending ? t('add.sending') : t('add.submitRequest')}
           </button>
-          <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5, margin: '10px 0 22px', textAlign: 'center' }}>
-            {t('add.stayNote', { email })}
-          </p>
         </>
       )}
 
@@ -482,11 +479,6 @@ export default function AjouterEnfant() {
           </div>
         )}
 
-        <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.55, margin: '12px 0 0' }}>
-          {clubs.length
-            ? t(clubs.length > 1 ? 'add.after.noteMany' : 'add.after.noteOne', { n: clubs.length })
-            : t('add.after.noteNone')}
-        </p>
       </div>
 
       {/* ---- 8. Qui voit quoi ---- */}
@@ -495,7 +487,6 @@ export default function AjouterEnfant() {
           {t('add.who.title')}
         </div>
         {[
-          ['you', t('add.who.you'), t('add.who.youText'), '#6E9C6E'],
           ['club', t('add.who.club'),
             whoClub && whoChild ? t('add.who.clubText', { club: whoClub, child: whoChild })
               : t('add.who.clubTextPlain'), 'var(--brand)'],
