@@ -1157,22 +1157,31 @@ export default function Club() {
    * Rangée de pastilles « équipe » défilable horizontalement, commune aux onglets
    * Athlètes et Parents. countOf(teamId) rend le nombre affiché, ou null pour aucun.
    */
-  const teamPillRow = (pickedId, onPick, allLabel, countOf, groupLabel) => (
+  const pillStyle = (on) => ({
+    flex: '0 0 auto', border: on ? '1.5px solid var(--brand)' : '1.5px solid var(--border)',
+    background: on ? 'var(--brand)' : '#fff', color: on ? '#fff' : 'var(--ink)', borderRadius: 20,
+    padding: '7px 13px', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+  });
+  const pillTitle = (text) => (
+    <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', margin: '10px 0 5px' }}>{text}</div>
+  );
+  const teamPillRow = (pickedId, onPick, allLabel, countOf, groupLabel, rowTitle) => (
     teams.length > 0 && (
+      <>
+      {pillTitle(rowTitle)}
       <div role="group" aria-label={groupLabel}
-        style={{ display: 'flex', gap: 7, marginTop: 10, overflowX: 'auto', whiteSpace: 'nowrap',
+        style={{ display: 'flex', gap: 7, overflowX: 'auto', whiteSpace: 'nowrap',
           paddingBottom: 4, WebkitOverflowScrolling: 'touch' }}>
         {[{ id: '', name: allLabel, n: null }, ...teams.map((tm) => ({ id: tm.id, name: tm.name, n: countOf(tm.id) }))]
           .map((pill) => (
             <button key={pill.id || 'all'} type="button" aria-pressed={pickedId === pill.id}
               onClick={() => onPick(pill.id)}
-              style={{ flex: '0 0 auto', border: pickedId === pill.id ? '1.5px solid var(--brand)' : '1.5px solid var(--border)',
-                background: pickedId === pill.id ? 'var(--peach)' : '#fff', color: 'var(--ink)', borderRadius: 20,
-                padding: '7px 13px', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+              style={pillStyle(pickedId === pill.id)}>
               {pill.name}{pill.n !== null && pill.n !== undefined ? ` (${pill.n})` : ''}
             </button>
           ))}
       </div>
+      </>
     )
   );
 
@@ -1567,7 +1576,7 @@ export default function Club() {
             <>
               <div className="label" style={{ marginBottom: 2 }}>{t('club.athletesN', { n: athShown.length })}</div>
               {teamPillRow(athPick, setAthGroup, t('ath.allGroups'),
-                (tid) => everyone.filter((a) => a.teamId === tid).length, t('ath.groupFilter'))}
+                (tid) => everyone.filter((a) => a.teamId === tid).length, t('ath.groupFilter'), t('ath.groupTitle'))}
               <div style={{ height: 12 }} />
               {athShown.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('ath.emptyGroup')}</div>}
               {athShown.length > 0 && athleteHeader(true)}
@@ -1633,9 +1642,7 @@ export default function Club() {
     const filterBtn = (key, label) => (
       <button key={key} type="button" aria-pressed={parentFilter === key}
         onClick={() => setParentFilter(key)}
-        style={{ border: parentFilter === key ? '1.5px solid var(--brand)' : '1.5px solid var(--border)',
-          background: parentFilter === key ? 'var(--peach)' : '#fff', color: 'var(--ink)', borderRadius: 20,
-          padding: '7px 13px', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+        style={pillStyle(parentFilter === key)}>
         {label}
       </button>
     );
@@ -1751,12 +1758,13 @@ export default function Club() {
             <div className="card" style={{ marginBottom: 0 }}>
               <input className="input" value={parentQuery} placeholder={t('par.search')}
                 onChange={(e) => setParentQuery(e.target.value)} />
-              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+              {pillTitle(t('par.statusTitle'))}
+              <div style={{ display: 'flex', gap: 7, overflowX: 'auto', whiteSpace: 'nowrap', paddingBottom: 4 }}>
                 {filterBtn('all', t('par.fAll'))}
                 {filterBtn('pending', t('par.fPending', { n: pendingParents.length }))}
                 {filterBtn('orphans', t('par.fOrphans', { n: orphansInTeam.length }))}
               </div>
-              {teamPillRow(teamPick, setParentTeam, t('par.allTeams'), teamParentCount, t('par.teamFilter'))}
+              {teamPillRow(teamPick, setParentTeam, t('par.allTeams'), teamParentCount, t('par.teamFilter'), t('par.teamTitle'))}
             </div>
 
             {showOrphanBlock && (
