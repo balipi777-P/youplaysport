@@ -17,7 +17,6 @@ import Fold from './Fold';
 /** Types d'événement pour lesquels l'option existe (déplacements). */
 export const CARPOOL_TYPES = ['match', 'tournoi', 'stage', 'sortie'];
 
-const CHOICES = ['drive', 'need', 'self', 'unavailable'];
 const TAP = { minHeight: 44 };
 const sb = () => supabase.schema('yps');
 
@@ -32,7 +31,6 @@ export function carpoolErrKey(e) {
 export function ParentCarpool({ eventId, refreshKey }) {
   const { t } = useT();
   const [sum, setSum] = useState(null);       // null = rien à afficher
-  const [pick, setPick] = useState('');       // choix en cours de saisie (drive attend les places)
   const [seats, setSeats] = useState(1);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -42,6 +40,7 @@ export function ParentCarpool({ eventId, refreshKey }) {
     const { data, error } = await sb().rpc('carpool_summary', { p_event: eventId });
     if (error || !data || !data.enabled || data.excluded) { setSum(null); return; }
     setSum(data);
+    if (data.mine?.choice === 'drive' && data.mine.seats) setSeats(data.mine.seats);
   }, [eventId]);
 
   useEffect(() => { load(); }, [load, refreshKey]);
@@ -52,51 +51,45 @@ export function ParentCarpool({ eventId, refreshKey }) {
       { p_event: eventId, p_choice: choice, p_seats: choice === 'drive' ? n : null });
     setBusy(false);
     if (error) { console.error('[set_carpool_choice]', error.message); setErr(t(carpoolErrKey(error))); return; }
-    setPick('');
     await load();
   }
 
   if (!sum) return null;
   const mine = sum.mine || null;
-  const shown = pick || mine?.choice || '';
-  const label = (c) => t(`carpool.${c}`);
+  /* Un ancien choix « self » s'affiche comme « pas de place disponible ». */
+  const cur = mine?.choice === 'self' ? 'unavailable' : (mine?.choice || '');
+  const driveLabel = (n) => t(n > 1 ? 'carpool.driveMany' : 'carpool.driveOne', { n });
+  const driveOn = cur === 'drive' && mine?.seats === seats;
+  const step = { width: 44, height: 44, flex: '0 0 44px', borderRadius: 12, border: '1px solid var(--border)', background: '#fff',
+    fontSize: 20, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--ink)', padding: 0 };
 
   return (
     <Fold title={t('carpool.title')} defaultOpen={false}
-      summary={mine ? (mine.choice === 'drive' ? t('carpool.mineDrive', { n: mine.seats }) : label(mine.choice)) : t('carpool.toChoose')}
+      summary={cur ? (cur === 'drive' ? driveLabel(mine.seats) : t(`carpool.${cur}`)) : t('carpool.toChoose')}
       style={{ marginTop: 12, marginBottom: 0, boxShadow: 'none', background: '#FBF6F0', border: '1px solid var(--border)' }}>
       <div style={{ fontSize: 12.5, color: '#57534A', fontWeight: 700, marginBottom: 10 }}>
         {t('carpool.sumOffered', { n: sum.seats_offered ?? 0 })} · {t('carpool.sumRequested', { n: sum.seats_requested ?? 0 })}
       </div>
       <div role="group" aria-label={t('carpool.title')} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {CHOICES.map((c) => {
-          const on = shown === c;
-          return (
-            <button key={c} type="button" aria-pressed={on} disabled={busy}
-              className={on ? 'btn' : 'btn ghost'} style={{ ...TAP, marginBottom: 0 }}
-              onClick={() => {
-                setErr('');
-                if (c === 'drive') { setPick('drive'); setSeats(mine?.choice === 'drive' && mine.seats ? mine.seats : 1); }
-                else save(c);
-              }}>
-              {label(c)}
-            </button>
-          );
-        })}
-      </div>
-      {pick === 'drive' && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 12 }}>
-          <label htmlFor={`cp-seats-${eventId}`} style={{ fontSize: 13, fontWeight: 700 }}>{t('carpool.seats')}</label>
-          <select id={`cp-seats-${eventId}`} className="input" value={seats} style={{ ...TAP, width: 'auto', marginBottom: 0 }}
-            onChange={(e) => setSeats(Number(e.target.value))}>
-            {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n}</option>)}
-          </select>
-          <button type="button" className="btn" disabled={busy} style={{ ...TAP, width: 'auto', padding: '0 16px', marginBottom: 0 }}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button type="button" style={step} disabled={busy || seats <= 1} aria-label={t('carpool.minus')}
+            onClick={() => setSeats((n) => Math.max(1, n - 1))}>−</button>
+          <button type="button" aria-pressed={driveOn} disabled={busy}
+            className={driveOn ? 'btn' : 'btn ghost'} style={{ ...TAP, flex: 1, minWidth: 0, marginBottom: 0, padding: '0 8px' }}
             onClick={() => save('drive', seats)}>
-            {busy ? '…' : t('carpool.confirm')}
+            {driveLabel(seats)}
           </button>
+          <button type="button" style={step} disabled={busy || seats >= 8} aria-label={t('carpool.plus')}
+            onClick={() => setSeats((n) => Math.min(8, n + 1))}>+</button>
         </div>
-      )}
+        {['unavailable', 'need'].map((c) => (
+          <button key={c} type="button" aria-pressed={cur === c} disabled={busy}
+            className={cur === c ? 'btn' : 'btn ghost'} style={{ ...TAP, marginBottom: 0 }}
+            onClick={() => save(c)}>
+            {t(`carpool.${c}`)}
+          </button>
+        ))}
+      </div>
       {err && <div className="error" role="alert" style={{ marginTop: 10 }}>{err}</div>}
     </Fold>
   );
@@ -132,7 +125,9 @@ export function StaffCarpool({ eventId, refreshKey, onLoaded }) {
           <div style={{ fontSize: 13.5, fontWeight: 700, overflowWrap: 'anywhere' }}>{p.parent_name}</div>
           <div style={{ fontSize: 12, color: 'var(--muted)', overflowWrap: 'anywhere' }}>{(p.children || []).join(', ')}</div>
           <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 2 }}>
-            {t(`carpool.${p.choice}`)}{p.choice === 'drive' && p.seats ? ` · ${t('carpool.seatsN', { n: p.seats })}` : ''}
+            {p.choice === 'drive'
+              ? t(p.seats > 1 ? 'carpool.seatsMany' : 'carpool.seatsOne', { n: p.seats || 0 })
+              : t(p.choice === 'need' ? 'carpool.staff.need' : 'carpool.staff.unavailable')}
           </div>
         </div>
       ))}
