@@ -196,6 +196,7 @@ export default function Club() {
   const [orphanMail, setOrphanMail] = useState({});       // {playerId: email saisi}
   const [formChild, setFormChild] = useState('');
   const [formMail, setFormMail] = useState('');
+  const [cardLink, setCardLink] = useState(null);       // {uid, child} : « Rattacher à un autre enfant » ouvert sur une carte
   const [linkBusy, setLinkBusy] = useState(''); // link_id en cours de décision
   const [csv, setCsv] = useState(null);   // {name, rows} du fichier déposé
   const [dragging, setDragging] = useState(false);
@@ -268,7 +269,7 @@ export default function Club() {
       const rels = (lk || []).map((l) => ({
         linkId: linkIdOf[`${l.player_id}|${l.parent_user_id}`] || '',
         playerId: l.player_id, uid: l.parent_user_id, status: l.status || 'active',
-        fullName: l.full_name || '', mail: l.email_masked || '',
+        fullName: l.full_name || '', mail: l.email_masked || '', fullMail: l.email || '',
       })).filter((r) => r.linkId);
       setParentsRaw({ players: roster, rels });
       setParentsFailed(false);
@@ -769,6 +770,13 @@ export default function Club() {
     const mail = (rawMail || '').trim();
     if (!playerId) { setErr(t('par.errChild')); return false; }
     if (!mail) { setErr(t('club.errParentEmail')); return false; }
+    /* Un rattachement existant (refusé compris) pour ce même email et cet enfant : message clair plutôt qu'un ajout ignoré. */
+    const sameRel = (parentsRaw ? parentsRaw.rels : []).find((r) => r.playerId === playerId
+      && r.fullMail && r.fullMail.trim().toLowerCase() === mail.toLowerCase());
+    if (sameRel) {
+      setErr(t(sameRel.status === 'rejected' ? 'par.errAlreadyRejected' : 'par.errAlreadyLinked'));
+      return false;
+    }
     setParentBusy(playerId);
     try {
       const { error } = await supabase.rpc('admin_link_parent_by_email', { p_player: playerId, p_email: mail });
@@ -1534,7 +1542,8 @@ export default function Club() {
     const byParent = {};
     for (const r of rawRels) {
       const slot = byParent[r.uid] || (byParent[r.uid] = {
-        uid: r.uid, label: r.fullName || r.mail || t('par.unknown'), mail: r.mail, kids: [] });
+        uid: r.uid, label: r.fullName || r.fullMail || r.mail || t('par.unknown'),
+        mail: r.fullMail || r.mail, maskedMail: r.mail, fullMail: r.fullMail, kids: [] });
       const pl = kidById[r.playerId];
       slot.kids.push({ linkId: r.linkId, playerId: r.playerId, status: r.status,
         childLabel: pl ? kidName(pl) : '—', teamLabel: pl ? teamLabelOf(pl.team_id) : '' });
@@ -1548,7 +1557,7 @@ export default function Club() {
     const activeParents = allParents.filter((pr) => pr.kids.some((k) => k.status !== 'rejected'));
 
     const needle = fold(parentQuery.trim());
-    const parentHit = (pr) => !needle || fold(pr.label).includes(needle) || fold(pr.mail).includes(needle)
+    const parentHit = (pr) => !needle || fold(pr.label).includes(needle) || fold(pr.mail).includes(needle) || fold(pr.maskedMail).includes(needle)
       || pr.kids.some((k) => fold(k.childLabel).includes(needle));
     const shownParents = (parentFilter === 'pending' ? pendingParents : allParents).filter(parentHit);
     const shownOrphans = allOrphans.filter((pl) => !needle || fold(kidName(pl)).includes(needle));
@@ -1627,6 +1636,28 @@ export default function Club() {
           <div style={{ fontSize: 12, color: 'var(--muted)', overflowWrap: 'anywhere' }}>{pr.mail}</div>
         )}
         <div style={{ marginTop: 6 }}>{pr.kids.map((k) => kidLine(pr, k))}</div>
+        {cardLink && cardLink.uid === pr.uid ? (
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+            <select className="input" value={cardLink.child}
+              onChange={(e) => setCardLink({ uid: pr.uid, child: e.target.value })}>
+              <option value="">{t('par.linkChild')}</option>
+              {rawKids.filter((pl) => !pr.kids.some((k) => k.playerId === pl.id && k.status !== 'rejected'))
+                .map((pl) => <option key={pl.id} value={pl.id}>{kidName(pl)} · {teamLabelOf(pl.team_id)}</option>)}
+            </select>
+            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+              <button type="button" className="btn" style={smallBtn} disabled={!!parentBusy}
+                onClick={async () => { if (await parentLink(cardLink.child, pr.fullMail)) setCardLink(null); }}>
+                {t('par.link')}
+              </button>
+              <button type="button" className="btn ghost" style={smallBtn} onClick={() => setCardLink(null)}>{t('par.cancel')}</button>
+            </div>
+          </div>
+        ) : (
+          pr.fullMail && (
+            <button type="button" className="btn ghost" style={{ ...smallBtn, marginTop: 8 }}
+              onClick={() => { setErr(''); setCardLink({ uid: pr.uid, child: '' }); }}>{t('par.linkOther')}</button>
+          )
+        )}
       </div>
     );
 
