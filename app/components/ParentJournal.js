@@ -185,7 +185,7 @@ export default function ParentJournal({
               border: '1px solid var(--border)', borderRadius: 14, boxShadow: '0 8px 22px rgba(28,26,23,0.12)', padding: 6 }}>
               <button type="button" role="menuitem" onClick={() => { setMenu(false); onProfile(); }} style={menuItem}>{t('nav.myProfile')}</button>
               <div style={{ ...menuItem, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'default' }}>
-                <span>{t('journal.menuLang')}</span><LangToggle />
+                <span>{t('journal.menuLang')}</span><LangToggle big />
               </div>
               <button type="button" role="menuitem" onClick={() => { setMenu(false); onLogout(); }} style={menuItem}>{t('common.logout')}</button>
             </div>

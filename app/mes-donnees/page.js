@@ -206,6 +206,11 @@ export default function MesDonnees() {
         </div>
       )}
 
+      <button type="button" className="btn ghost" onClick={async () => { await supabase.auth.signOut(); router.replace('/login'); }}
+        style={{ minHeight: 44, marginBottom: 16 }}>
+        {t('common.logout')}
+      </button>
+
       <Fold title={t('mydata.dangerT')} danger={DANGER}>
         <p style={{ fontSize: 13, color: '#5A554B', lineHeight: 1.55, margin: '0 0 14px' }}>{t(dangerKey)}</p>
         <button type="button" className="btn" onClick={() => { setConfirming(true); setErr(''); setWord(''); }}

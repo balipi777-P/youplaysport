@@ -172,6 +172,11 @@ export default function Profil() {
           style={{ fontWeight: 700, fontSize: 14 }}>{t('mydata.link')} →</a>
       </div>
 
+      <button type="button" className="btn ghost" onClick={async () => { await supabase.auth.signOut(); router.replace('/login'); }}
+        style={{ minHeight: 44, marginBottom: 16 }}>
+        {t('common.logout')}
+      </button>
+
       <AppVersion />
       <BottomNav role="parent" />
     </div>
